@@ -101,6 +101,12 @@ retrieval and end-of-turn curation.
 `$codex-memory`，让 Codex 读取、标记实际使用、写入、替换或淘汰记忆。Skill
 通过本机 `codex-memory` MCP 工具执行读写。
 
+以后向 GitHub 上传或更新本项目时，必须从专用分支提交并创建 Pull Request，
+不要直接推送到默认分支。
+
+Future GitHub uploads or updates to this project must be committed on a dedicated
+branch and submitted through a Pull Request. Do not push directly to the default branch.
+
 ## MCP 工具 MCP tools
 
 | 工具 | 作用 | 写入数据库 |
