@@ -2,7 +2,7 @@
 
 本项目是一个只依赖 Python 标准库的本地 Codex 长期记忆层。它把与用户本人有关、或体现长期电脑/Codex 使用偏好的信息整理成可检索的原子记忆，并通过 SQLite、MCP 和 Codex lifecycle hooks 连接到 Codex 桌面版。
 
-This project is a lightweight local long-term memory layer for Codex. It stores atomic, curated memories about the user and durable computer/Codex preferences, then connects them to Codex Desktop through SQLite, MCP, and lifecycle hooks. It uses only the Python standard library.
+This project is a lightweight local long-term memory layer for Codex. It stores atomic, curated memories about the user, durable preferences, reusable project and technical context, and verified solution procedures, then connects them to Codex Desktop through SQLite, MCP, and lifecycle hooks. It uses only the Python standard library.
 
 ## 功能 Features
 
@@ -100,19 +100,21 @@ The write tools are intended for the end-of-turn curation step. A normal search 
 
 ## 记忆整理规则 Memory policy
 
-只保存：
+可以保存：
 
 - 已确认的个人事实，例如长期教育、工作、项目或技能信息；
 - 长期稳定的电脑、编程或 Codex 使用偏好；
-- 未来对多个会话有帮助的约束和决定。
+- 未来对多个会话有帮助的项目背景、技术环境、约束和决定；
+- 已经验证过的正确解决方法和操作规范，例如 LaTeX 编译与 PDF 转换、Chrome 控制与读取、Gradescope 批改作业流程；
+- 以后可能反复使用的通用知识。
 
 不要保存：
 
 - 密码、API token、密钥、联系方式或其他敏感凭据；
-- 普通任务过程、一次性输出、完整聊天记录或完整文档；
-- 助手临时方案、记忆库实现细节、未经确认的猜测和低价值闲聊。
+- 只对本轮有用的临时任务过程、一次性输出、完整聊天记录或完整文档；
+- 助手临时方案、本记忆系统实现细节、未经验证的步骤或猜测和低价值闲聊。
 
-Store only confirmed personal facts, durable computer/programming/Codex preferences, and decisions or constraints that will help future sessions. Do not store passwords, API tokens, keys, contact details, complete conversations/documents, transient task progress, assistant drafts, unconfirmed guesses, or low-value chatter.
+Store confirmed, reusable information: personal facts, durable computer/programming/Codex preferences, recurring project or technical context, stable decisions, general knowledge, and solution procedures that have actually been verified. For example, reusable LaTeX/PDF, browser-control, or grading workflows may be remembered. Do not store passwords, API tokens, keys, contact details, complete conversations/documents, one-off task steps, assistant drafts, the memory system's own implementation details, unverified procedures or guesses, or low-value chatter.
 
 When a new fact conflicts with an existing fact, search first and call `codex_memory_commit` with `replace_ids`. Retire records that are wrong, duplicated, or no longer useful.
 
