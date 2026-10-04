@@ -20,4 +20,14 @@ if (Test-Path -LiteralPath $resolvedInstall) {
 } else {
     Write-Host "No installed source directory found at $resolvedInstall"
 }
+$skillDirectory = [System.IO.Path]::GetFullPath((Join-Path $expectedRoot "skills\codex-memory"))
+if (-not $skillDirectory.StartsWith($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to remove a skill directory outside the user's .codex directory: $skillDirectory"
+}
+if (Test-Path -LiteralPath $skillDirectory) {
+    Remove-Item -LiteralPath $skillDirectory -Recurse -Force
+    Write-Host "Removed installed Codex skill: $skillDirectory"
+} else {
+    Write-Host "No installed Codex skill found at $skillDirectory"
+}
 Write-Host "The local database and Codex configuration were left unchanged. Remove them manually only if desired."

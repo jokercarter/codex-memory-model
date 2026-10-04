@@ -27,6 +27,7 @@ codex_memory_vault.pyw     # Tkinter desktop manager
 config/                    # Codex configuration examples
 scripts/                   # Windows installer and helper scripts
 docs/                      # Design and policy notes
+skills/codex-memory/       # Installable Codex Desktop skill
 AGENTS.md                  # Memory curation policy for Codex
 ```
 
@@ -85,6 +86,20 @@ The default database path is `%LOCALAPPDATA%\CodexMemoryVault\memory.db`. When `
 If you do not use the installer, see `config/hooks.json.example` and `config/config.toml.example`. Replace `<PYTHON>` and `<CODEX_MEMORY_DIR>` with real paths, merge the hooks into `%USERPROFILE%\.codex\hooks.json`, and merge the MCP section into `%USERPROFILE%\.codex\config.toml`.
 
 The MCP command must start `codex_memory_mcp.py` with the same Python interpreter that can import the copied files. Hook commands must point to `codex_memory_hook.py` in the same directory.
+
+## Codex Skill
+
+`skills/codex-memory/` is an installable Codex skill. The Windows installer
+copies it to `%USERPROFILE%\\.codex\\skills\\codex-memory`; you can also copy that
+directory manually. Restart Codex Desktop after installation. You can invoke it explicitly
+with `$codex-memory`, or let Codex select it automatically for memory-related
+tasks. The skill uses the local `codex-memory` MCP tools for both read-only
+retrieval and end-of-turn curation.
+
+`skills/codex-memory/` 是可安装到 Codex Desktop 的 Skill。把该目录复制到
+`%USERPROFILE%\\.codex\\skills\\codex-memory` 后重新启动 Codex；也可以显式使用
+`$codex-memory`，让 Codex 读取、标记实际使用、写入、替换或淘汰记忆。Skill
+通过本机 `codex-memory` MCP 工具执行读写。
 
 ## MCP 工具 MCP tools
 

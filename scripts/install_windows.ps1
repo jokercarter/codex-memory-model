@@ -115,6 +115,8 @@ if ($python.PrefixArgs.Count -gt 0) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
+$skillInstallDirectory = Join-Path $codexHome "skills\codex-memory"
+New-Item -ItemType Directory -Force -Path (Join-Path $skillInstallDirectory "agents") | Out-Null
 $filesToInstall = @(
     "codex_memory_core.py",
     "codex_memory_mcp.py",
@@ -124,8 +126,11 @@ $filesToInstall = @(
 foreach ($file in $filesToInstall) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $file) -Destination (Join-Path $InstallDirectory $file) -Force
 }
+Copy-Item -LiteralPath (Join-Path $sourceRoot "skills\codex-memory\SKILL.md") -Destination (Join-Path $skillInstallDirectory "SKILL.md") -Force
+Copy-Item -LiteralPath (Join-Path $sourceRoot "skills\codex-memory\agents\openai.yaml") -Destination (Join-Path $skillInstallDirectory "agents\openai.yaml") -Force
 
 Write-Host "Installed Codex memory files to $InstallDirectory"
+Write-Host "Installed Codex skill to $skillInstallDirectory"
 Write-Host "Database remains local at $([Environment]::GetFolderPath('LocalApplicationData'))\CodexMemoryVault\memory.db"
 
 if (-not $ConfigureCodex) {
