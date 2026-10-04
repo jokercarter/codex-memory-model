@@ -1,0 +1,10 @@
+[project]
+name = "codex-memory-model"
+version = "1.0.0"
+description = "A dependency-free local long-term memory layer for Codex"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.codex-memory]
+max_memories = 1000
+decay_interval_days = 3

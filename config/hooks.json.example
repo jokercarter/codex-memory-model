@@ -1,0 +1,45 @@
+{
+  "description": "Codex local long-term memory layer",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py session-start",
+            "command_windows": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py session-start",
+            "statusMessage": "Load Codex long-term memory",
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py prompt",
+            "command_windows": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py prompt",
+            "statusMessage": "Search Codex long-term memory",
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py stop",
+            "command_windows": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py stop",
+            "statusMessage": "Curate Codex memory",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
