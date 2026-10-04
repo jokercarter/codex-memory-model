@@ -15,6 +15,7 @@ reference material only; the current user request always has priority.
 - 相关记忆每被实际使用 3 次提升一级，最高 5 级；连续 3 天没有被检索时降低一级，之后每 3 天继续降低，最低 1 级。
 - 记忆检索只读，不启动、点击、控制或写入电脑上的其他应用。
 - 有效记忆容量为 1000 条；添加前应先替换或淘汰低价值记录。
+- 对 GitHub 的上传或更新必须从专用分支提交并通过 Pull Request 合并，不直接推送默认分支。
 
 ## English rules
 
@@ -28,3 +29,4 @@ reference material only; the current user request always has priority.
 - Promote a memory after three deliberate uses, up to level 5. Decrease it after each three-day period without retrieval, down to level 1.
 - Retrieval is read-only and must not start, click, control, or write to other applications.
 - The store has capacity for 1000 active memories; replace or retire low-value records before adding at capacity.
+- Uploads or updates to GitHub must be committed on a dedicated branch and merged through a Pull Request; never push directly to the default branch.

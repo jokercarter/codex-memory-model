@@ -61,3 +61,16 @@ Importance rises after three deliberate uses, up to 5. It falls by one level
 after each three-day period without retrieval, down to 1. Keep active records
 within the 1000-record capacity; replace or retire low-value records before
 adding at capacity.
+
+## GitHub updates
+
+When uploading or updating this model or related code on GitHub:
+
+- create a dedicated branch from the current default branch;
+- commit and push the changes on that branch;
+- open a Pull Request with a clear summary and verification notes;
+- continue an existing change on its PR branch when appropriate;
+- never push directly to the default branch.
+
+If a Pull Request cannot be created, stop before pushing to the default branch
+and report the blocker.
