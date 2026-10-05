@@ -22,7 +22,7 @@ from codex_memory_core import ensure_schema as ensure_core_schema
 
 
 MAX_MEMORIES = 1000
-DECAY_INTERVAL_DAYS = 3
+DECAY_INTERVAL_HOURS = 12
 IMPORTANCE_MIN = 1
 IMPORTANCE_MAX = 100
 IMPORTANT_MIN = 67
@@ -797,7 +797,7 @@ class MemoryApp:
             "关于 Codex 记忆库",
             "本地、轻量的 Codex 长期记忆工具\n\n"
             f"容量：最多 {MAX_MEMORIES} 条\n"
-            "重要度：1–33 不重要，34–66 普通，67–100 重要；连续 3 天不用会降低 1 点\n"
+            "重要度：1–33 不重要，34–66 普通，67–100 重要；每次使用至少 +20 且乘以 1.5；连续 12 小时不用乘以 0.9\n"
             "存储：SQLite（本机）\n"
             "功能：搜索、分类、重要度、JSON 导入导出、记忆合并",
             parent=self.root,

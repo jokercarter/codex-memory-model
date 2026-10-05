@@ -7,7 +7,7 @@ dependencies = []
 
 [tool.codex-memory]
 max_memories = 1000
-decay_interval_days = 3
+decay_interval_hours = 12
 importance_min = 1
 importance_max = 100
 important_min = 67

@@ -7,6 +7,7 @@ and Codex lifecycle hooks can run without installing extra packages.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import sqlite3
@@ -16,7 +17,7 @@ from typing import Iterable
 
 
 MAX_MEMORIES = 1000
-DECAY_INTERVAL_DAYS = 3
+DECAY_INTERVAL_HOURS = 12
 IMPORTANCE_MIN = 1
 IMPORTANCE_MAX = 100
 IMPORTANT_MIN = 67
@@ -257,10 +258,10 @@ def table_columns(connection: sqlite3.Connection) -> set[str]:
 
 
 def apply_decay(connection: sqlite3.Connection, now: datetime | None = None) -> int:
-    """Lower stale memories one point per 3 days without retrieval.
+    """Reduce stale importance by 10% for every 12-hour interval.
 
-    The last review timestamp is moved forward when a decay step is applied,
-    so repeated hook calls do not subtract the same step over and over.
+    The last review timestamp is moved forward when decay is applied, so
+    repeated hook calls do not subtract the same interval over and over.
     """
     current = now or datetime.now()
     rows = connection.execute(
@@ -277,12 +278,18 @@ def apply_decay(connection: sqlite3.Connection, now: datetime | None = None) -> 
             last_seen = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
-        days = max(0, (current - last_seen).days)
-        steps = days // DECAY_INTERVAL_DAYS
+        elapsed_hours = max(0.0, (current - last_seen).total_seconds() / 3600.0)
+        steps = int(elapsed_hours // DECAY_INTERVAL_HOURS)
         if steps <= 0:
             continue
-        new_importance = max(1, int(row["importance"]) - steps)
-        if new_importance != int(row["importance"]):
+        old_importance = int(row["importance"])
+        new_importance = max(
+            1,
+            int(math.floor(old_importance * (0.9 ** steps))),
+        )
+        if old_importance > 1 and new_importance >= old_importance:
+            new_importance = old_importance - 1
+        if new_importance != old_importance:
             updates.append((new_importance, current.strftime("%Y-%m-%d %H:%M:%S"), int(row["id"])))
     if updates:
         with connection:
@@ -300,7 +307,7 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
             "obsolete": 0,
             "capacity": MAX_MEMORIES,
             "remaining": MAX_MEMORIES,
-            "decay_interval_days": DECAY_INTERVAL_DAYS,
+            "decay_interval_hours": DECAY_INTERVAL_HOURS,
             "important": 0,
             "normal": 0,
             "unimportant": 0,
@@ -312,7 +319,7 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
             "obsolete": 0,
             "capacity": MAX_MEMORIES,
             "remaining": MAX_MEMORIES,
-            "decay_interval_days": DECAY_INTERVAL_DAYS,
+            "decay_interval_hours": DECAY_INTERVAL_HOURS,
             "important": 0,
             "normal": 0,
             "unimportant": 0,
@@ -332,7 +339,7 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
     counts.setdefault("obsolete", 0)
     counts["capacity"] = MAX_MEMORIES
     counts["remaining"] = max(0, MAX_MEMORIES - counts["active"])
-    counts["decay_interval_days"] = DECAY_INTERVAL_DAYS
+    counts["decay_interval_hours"] = DECAY_INTERVAL_HOURS
     def count_where(condition: str) -> int:
         prefix = "status = 'active' AND " if extended else ""
         row = connection.execute(
@@ -662,11 +669,10 @@ def search(
                 """
                 UPDATE memories
                    SET use_count = use_count + 1,
-                       importance = CASE
-                           WHEN ((use_count + 1) % 3 = 0 AND importance < 100)
-                           THEN importance + 1
-                           ELSE importance
-                       END,
+                       importance = MIN(
+                           100,
+                           MAX(importance + 20, ((importance * 3) + 1) / 2)
+                       ),
                        last_reviewed_at = ?
                  WHERE id = ? AND status = 'active'
                 """,
@@ -745,11 +751,10 @@ def mark_used(
             """
             UPDATE memories
                SET use_count = use_count + 1,
-                   importance = CASE
-                       WHEN ((use_count + 1) % 3 = 0 AND importance < 100)
-                       THEN importance + 1
-                       ELSE importance
-                   END,
+                   importance = MIN(
+                       100,
+                       MAX(importance + 20, ((importance * 3) + 1) / 2)
+                   ),
                    last_reviewed_at = ?, source_session = ?
              WHERE id = ? AND status = 'active'
             """,

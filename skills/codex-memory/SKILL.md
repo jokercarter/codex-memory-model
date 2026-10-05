@@ -70,10 +70,10 @@ store. Still split independent facts into atomic records, summarize rather than
 copy complete conversations or documents verbatim, and label unverified
 content as tentative instead of presenting it as confirmed.
 
-Importance rises by one point after three deliberate uses, up to 100. It falls
-by one point after each three-day period without retrieval, down to 1. Keep
-active records within the 1000-record capacity; replace or retire low-value
-records before adding at capacity.
+Each deliberate use raises importance to at least current+20 and roughly
+current*1.5, capped at 100. Every 12 hours without retrieval multiplies
+importance by 0.9, down to 1. Keep active records within the 1000-record
+capacity; replace or retire low-value records before adding at capacity.
 
 ## GitHub updates
 
