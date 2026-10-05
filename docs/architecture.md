@@ -36,5 +36,5 @@ modify records. Writes happen through the MCP write tools during curation.
 2. 新的原子信息由模型判断重要度和置信度后写入。
 3. 发生变化的信息通过 `replace_ids` 更新旧记录。
 4. 错误、重复或失效记录标记为 `obsolete`，不再占用有效容量。
-5. 实际使用会增加 `use_count`，每三次使用提升一级重要度。
-6. 连续三天未检索会降低一级重要度。
+5. 实际使用会增加 `use_count`，每次实际使用至少增加 20 点并乘以 1.5，最高 100。
+6. 连续 12 小时未检索会将重要度乘以 0.9，之后每 12 小时继续衰减，最低 1。
