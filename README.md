@@ -32,10 +32,15 @@ The project does not download or run a separate language model. The active Codex
 
 - **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。两种检索都是只读的。
 - **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、可复用的信息，不会因为每条消息都自动创建一条记录。
+- **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
 - **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 判断；实际使用三次提升一级，连续三天没有检索时降低一级，范围为 1–5。
 - **本地管理 / Local manager**：Tkinter 管理器支持搜索、分类、重要度筛选、编辑、合并、删除、JSON 导入和 JSON 导出。
 - **轻量部署 / Lightweight deployment**：只使用 Python 标准库，不需要 pip install，MCP 通过标准输入输出运行，不监听网络端口。
+
+The codex-memory skill supports both read and write workflows: it retrieves
+relevant memories before work and can mark, create, replace, or retire memories
+during end-of-turn curation. It is not a write-only tool.
 
 ## 系统要求 / Requirements
 

@@ -1,12 +1,17 @@
 ---
 name: codex-memory
-description: Read, use, and curate the local Codex memory store through the codex-memory MCP tools when a task needs reusable facts, preferences, project context, technical conventions, or verified solution procedures.
+description: Read, use, and curate the local Codex memory store through codex-memory MCP tools, including task-aware retrieval before work and end-of-turn writing, replacement, usage marking, and retirement.
 ---
 
 # Codex Memory
 
 Use the local `codex-memory` MCP server as the skill's storage backend. The
 current user request always overrides a stored memory.
+
+This is a bidirectional skill, not a write-only helper. When it is invoked for a
+memory-related task, it can both read relevant existing memories before work and
+maintain the store after work. Use only the operation that the current task
+requires, while preserving the read-before-change and end-of-turn write rules.
 
 ## Read
 
