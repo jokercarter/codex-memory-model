@@ -11,18 +11,27 @@ import json
 import sys
 from typing import Any
 
-from codex_memory_core import connect, format_context, mark_used, retire, search, stats, commit_memory
+from codex_memory_core import (
+    commit_memory,
+    connect,
+    format_context,
+    mark_used,
+    related,
+    retire,
+    search,
+    stats,
+)
 
 
 SERVER_NAME = "codex-memory"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.2.0"
 
 
 TOOLS = [
     {
         "name": "codex_memory_search",
         "description": (
-            "Read-only search of the user's local Codex long-term memory. Use this before doing work when the current prompt may relate to stored project conventions, decisions, preferences, or facts. Searching does not create, edit, promote, or decay records."
+            "Read-only graph-aware search of the user's local Codex long-term memory. It retrieves a small set of lexical seed memories and expands through high-strength memory relations, avoiding a full-memory scan when the FTS index is available. Searching does not create, edit, promote, or decay records."
         ),
         "inputSchema": {
             "type": "object",
@@ -30,7 +39,7 @@ TOOLS = [
                 "query": {"type": "string", "description": "Current task or keywords to search for."},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
                 "category": {"type": "string", "description": "Optional category filter."},
-                "min_importance": {"type": "integer", "minimum": 1, "maximum": 5},
+                "min_importance": {"type": "integer", "minimum": 1, "maximum": 100},
             },
             "required": ["query"],
         },
@@ -38,7 +47,7 @@ TOOLS = [
     {
         "name": "codex_memory_commit",
         "description": (
-            "Store one atomic information point after a Codex turn. It may include any user-requested fact, preference, project context, technical convention, solution procedure, general knowledge, or sensitive information such as contact details, passwords, tokens, or credentials. Broad retention is explicitly authorized by the user, so do not reject a requested fact merely because it is sensitive. Preserve precise facts, conditions, and useful detail without copying complete conversations or documents verbatim. Split independent facts into separate records and label unverified content as tentative. The Codex curator should judge initial importance: 1-2 is unimportant, 3 is normal, and 4-5 is important. If importance is omitted while refining an existing memory, its current level is preserved; if omitted for a new memory, a conservative fallback is used. Repeated deliberate use promotes a memory every three uses, up to 5. After 3 days without retrieval, importance decays by one level per 3-day period. Replace outdated or wrong memories with replace_ids, and retire redundant or stale memories with obsolete_ids."
+            "Store one atomic information point after a Codex turn. It may include any user-requested fact, preference, project context, technical convention, solution procedure, general knowledge, or sensitive information such as contact details, passwords, tokens, or credentials. Broad retention is explicitly authorized by the user, so do not reject a requested fact merely because it is sensitive. Preserve precise facts, conditions, and useful detail without copying complete conversations or documents verbatim. Split independent facts into separate records and label unverified content as tentative. The Codex curator should judge initial importance from 1-100. If importance is omitted while refining an existing memory, its current level is preserved; if omitted for a new memory, a conservative fallback is used. Related memories use a 1-100 relation strength. Memories deliberately used together gain relation strength. Repeated deliberate use promotes importance by one point every three uses, up to 100. After each three-day period without retrieval, importance decays by one point. Replace outdated or wrong memories with replace_ids, and retire redundant or stale memories with obsolete_ids."
         ),
         "inputSchema": {
             "type": "object",
@@ -46,7 +55,7 @@ TOOLS = [
                 "title": {"type": "string"},
                 "content": {"type": "string"},
                 "category": {"type": "string", "enum": ["通用", "项目", "技术", "决策", "流程", "偏好", "人物", "其他"]},
-                "importance": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Initial importance chosen by the Codex curator: 1-2 unimportant, 3 normal, 4-5 important. Omit when refining an existing memory to preserve its current level."},
+                "importance": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Initial importance chosen by the Codex curator on a 1-100 scale. Roughly 1-33 is unimportant, 34-66 is normal, and 67-100 is important. Omit when refining an existing memory to preserve its current level."},
                 "tags": {"type": "string"},
                 "source": {"type": "string"},
                 "memory_key": {"type": "string", "description": "Stable topic key; use the same key when refining the same fact."},
@@ -56,6 +65,18 @@ TOOLS = [
                 "source_session": {"type": "string"},
             },
             "required": ["title", "content"],
+        },
+    },
+    {
+        "name": "codex_memory_related",
+        "description": "Read-only lookup of memories related to one memory. Relation strength is 1-100 and is learned from shared topics and deliberate co-use.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "integer", "minimum": 1},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 30, "default": 10},
+            },
+            "required": ["memory_id"],
         },
     },
     {
@@ -109,7 +130,7 @@ def tool_result(value: Any, is_error: bool = False) -> dict[str, Any]:
 
 
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    read_only = name in {"codex_memory_search", "codex_memory_stats"}
+    read_only = name in {"codex_memory_search", "codex_memory_related", "codex_memory_stats"}
     connection = connect(read_only=read_only)
     try:
         if name == "codex_memory_search":
@@ -126,6 +147,18 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 {
                     "count": len(rows),
                     "context": format_context(rows),
+                    "memories": [dict(row) for row in rows],
+                }
+            )
+        if name == "codex_memory_related":
+            rows = related(
+                connection,
+                int(arguments.get("memory_id", 0)),
+                int(arguments.get("limit", 10)),
+            )
+            return tool_result(
+                {
+                    "count": len(rows),
                     "memories": [dict(row) for row in rows],
                 }
             )
@@ -187,7 +220,7 @@ def handle(request: dict[str, Any]) -> dict[str, Any] | None:
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                 "instructions": (
-                    "Use codex_memory_search before work when relevant; it is read-only and must not touch other applications. At the end of a turn, split confirmed, reusable information into one atomic point per codex_memory_commit call, including verified solution procedures and operational playbooks when they can help future turns. Judge initial importance, and use codex_memory_mark_used, codex_memory_commit, or codex_memory_retire to update this local store. Repeated deliberate use promotes useful memories; long-unused memories decay."
+                    "Use codex_memory_search before work when relevant; it is a graph-aware read-only search that starts from lexical seeds and follows strong memory relations, and it must not touch other applications. Use codex_memory_related to inspect a memory's 1-100 relation neighbors. At the end of a turn, split information into one atomic point per codex_memory_commit call, including verified solution procedures and operational playbooks when they can help future turns. Judge initial importance on a 1-100 scale, and use codex_memory_mark_used, codex_memory_commit, or codex_memory_retire to update this local store. Memories used together gain relation strength; importance rises one point every three deliberate uses and decays one point every three days without retrieval."
                 ),
             },
         )

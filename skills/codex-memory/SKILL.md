@@ -49,8 +49,14 @@ Memory may contain:
 
 For each new point, call `codex_memory_commit` with a precise title and content,
 one atomic fact, an appropriate category, and a model-judged initial importance
-(1-2 unimportant, 3 normal, 4-5 important). Preserve enough conditions and
-steps to make the memory useful later; do not copy the conversation verbatim.
+from 1 to 100. Treat 1-33 as unimportant, 34-66 as normal, and 67-100 as
+important. Preserve enough conditions and steps to make the memory useful
+later; do not copy the conversation verbatim.
+
+Memories can have learned relations with strength from 1 to 100. Deliberately
+using memories together increases their relation strength. Search starts with
+a small lexical seed set and expands through the strongest relation edges, so
+use codex_memory_related when you need to inspect a memory's neighbors.
 
 Before changing a fact or procedure, search for the existing record. Use the
 same `memory_key` and `replace_ids` when the new version supersedes it. Use
@@ -64,10 +70,10 @@ store. Still split independent facts into atomic records, summarize rather than
 copy complete conversations or documents verbatim, and label unverified
 content as tentative instead of presenting it as confirmed.
 
-Importance rises after three deliberate uses, up to 5. It falls by one level
-after each three-day period without retrieval, down to 1. Keep active records
-within the 1000-record capacity; replace or retire low-value records before
-adding at capacity.
+Importance rises by one point after three deliberate uses, up to 100. It falls
+by one point after each three-day period without retrieval, down to 1. Keep
+active records within the 1000-record capacity; replace or retire low-value
+records before adding at capacity.
 
 ## GitHub updates
 

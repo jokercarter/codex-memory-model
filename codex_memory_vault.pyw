@@ -17,12 +17,19 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from codex_memory_core import apply_decay as core_apply_decay
+from codex_memory_core import ensure_schema as ensure_core_schema
+
 
 MAX_MEMORIES = 1000
 DECAY_INTERVAL_DAYS = 3
+IMPORTANCE_MIN = 1
+IMPORTANCE_MAX = 100
+IMPORTANT_MIN = 67
+NORMAL_MIN = 34
 APP_TITLE = "Codex 记忆库"
 CATEGORIES = ["通用", "项目", "技术", "决策", "流程", "偏好", "人物", "其他"]
-IMPORTANCE_VALUES = ["5", "4", "3", "2", "1"]
+IMPORTANCE_VALUES = [str(value) for value in range(100, 0, -1)]
 IMPORTANCE_FILTER_VALUES = ["全部", "重要", "普通", "不重要", *IMPORTANCE_VALUES]
 
 
@@ -32,9 +39,9 @@ def now_text() -> str:
 
 def importance_level(value: int) -> str:
     value = int(value)
-    if value >= 4:
+    if value >= IMPORTANT_MIN:
         return "重要"
-    if value <= 2:
+    if value < NORMAL_MIN:
         return "不重要"
     return "普通"
 
@@ -57,78 +64,12 @@ class MemoryDB:
         self._create_schema()
 
     def _create_schema(self) -> None:
-        self.connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '',
-                category TEXT NOT NULL DEFAULT '通用',
-                importance INTEGER NOT NULL DEFAULT 3 CHECK (importance BETWEEN 1 AND 5),
-                source TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_memories_updated_at
-                ON memories(updated_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_memories_category
-                ON memories(category);
-            CREATE INDEX IF NOT EXISTS idx_memories_importance
-                ON memories(importance DESC);
-            """
-        )
-        columns = {
-            row["name"]
-            for row in self.connection.execute("PRAGMA table_info(memories)").fetchall()
-        }
-        migrations = {
-            "memory_key": "TEXT NOT NULL DEFAULT ''",
-            "status": "TEXT NOT NULL DEFAULT 'active'",
-            "confidence": "REAL NOT NULL DEFAULT 0.8",
-            "source_session": "TEXT NOT NULL DEFAULT ''",
-            "last_reviewed_at": "TEXT NOT NULL DEFAULT ''",
-            "use_count": "INTEGER NOT NULL DEFAULT 0",
-        }
-        for name, declaration in migrations.items():
-            if name not in columns:
-                self.connection.execute(f"ALTER TABLE memories ADD COLUMN {name} {declaration}")
-        self.connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memories_active_updated ON memories(status, updated_at DESC)"
-        )
-        self.connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(memory_key, status)"
-        )
+        ensure_core_schema(self.connection)
         self.connection.commit()
         self.apply_decay()
 
     def apply_decay(self) -> int:
-        current = datetime.now()
-        rows = self.connection.execute(
-            """
-            SELECT id, importance, created_at, updated_at, last_reviewed_at
-              FROM memories
-             WHERE status = 'active' AND importance > 1
-            """
-        ).fetchall()
-        updates: list[tuple[int, str, int]] = []
-        for row in rows:
-            stamp = str(row["last_reviewed_at"] or row["updated_at"] or row["created_at"] or "")
-            try:
-                last_seen = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                continue
-            steps = max(0, (current - last_seen).days) // DECAY_INTERVAL_DAYS
-            new_importance = max(1, int(row["importance"]) - steps)
-            if steps > 0 and new_importance != int(row["importance"]):
-                updates.append((new_importance, current.strftime("%Y-%m-%d %H:%M:%S"), int(row["id"])))
-        if updates:
-            with self.connection:
-                self.connection.executemany(
-                    "UPDATE memories SET importance = ?, last_reviewed_at = ? WHERE id = ? AND status = 'active'",
-                    updates,
-                )
-        return len(updates)
+        return core_apply_decay(self.connection)
 
     def count(self) -> int:
         self.apply_decay()
@@ -157,11 +98,11 @@ class MemoryDB:
             params.append(category)
         if importance and importance != "全部":
             if importance == "重要":
-                clauses.append("importance >= 4")
+                clauses.append(f"importance >= {IMPORTANT_MIN}")
             elif importance == "普通":
-                clauses.append("importance = 3")
+                clauses.append(f"importance >= {NORMAL_MIN} AND importance < {IMPORTANT_MIN}")
             elif importance == "不重要":
-                clauses.append("importance <= 2")
+                clauses.append(f"importance < {NORMAL_MIN}")
             else:
                 clauses.append("importance = ?")
                 params.append(int(importance))
@@ -199,7 +140,7 @@ class MemoryDB:
                 values["content"],
                 values.get("tags", ""),
                 values.get("category", "通用"),
-                int(values.get("importance", 3)),
+                max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(values.get("importance", 50)))),
                 values.get("source", ""),
                 timestamp,
                 timestamp,
@@ -226,7 +167,7 @@ class MemoryDB:
                 values["content"],
                 values.get("tags", ""),
                 values.get("category", "通用"),
-                int(values.get("importance", 3)),
+                max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(values.get("importance", 50)))),
                 values.get("source", ""),
                 now_text(),
                 str(values.get("memory_key", values["title"])).strip(),
@@ -245,7 +186,7 @@ class MemoryDB:
     def export_json(self, path: Path) -> int:
         rows = self.connection.execute(
             """
-            SELECT title, content, tags, category, importance, source,
+            SELECT id, title, content, tags, category, importance, source,
                    created_at, updated_at, memory_key, confidence,
                    source_session, last_reviewed_at
               FROM memories
@@ -253,11 +194,20 @@ class MemoryDB:
              ORDER BY importance DESC, updated_at DESC, id DESC
             """
         ).fetchall()
+        relation_rows = self.connection.execute(
+            """
+            SELECT memory_a_id, memory_b_id, strength, evidence_count,
+                   created_at, updated_at, last_observed_at
+              FROM memory_relations
+             ORDER BY memory_a_id, memory_b_id
+            """
+        ).fetchall()
         payload = {
-            "format": "codex-memory-v1",
+            "format": "codex-memory-v2",
             "exported_at": now_text(),
             "max_memories": MAX_MEMORIES,
             "memories": [dict(row) for row in rows],
+            "relations": [dict(row) for row in relation_rows],
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return len(rows)
@@ -272,11 +222,17 @@ class MemoryDB:
             raise ValueError("JSON 格式不正确：需要数组，或包含 memories 数组的对象")
 
         existing = {
-            (row["title"].strip(), row["content"].strip())
+            (row["title"].strip(), row["content"].strip()): int(row["id"])
             for row in self.connection.execute(
-                "SELECT title, content FROM memories WHERE status = 'active'"
+                "SELECT id, title, content FROM memories WHERE status = 'active'"
             )
         }
+        source_relations = (
+            payload.get("relations", [])
+            if isinstance(payload, dict) and isinstance(payload.get("relations"), list)
+            else []
+        )
+        id_map: dict[int, int] = {}
         added = skipped = invalid = 0
         remaining = max(0, MAX_MEMORIES - self.count())
         timestamp = now_text()
@@ -291,13 +247,20 @@ class MemoryDB:
                     invalid += 1
                     continue
                 identity = (title, content)
-                if identity in existing or added >= remaining:
+                if identity in existing:
+                    try:
+                        id_map[int(item.get("id"))] = existing[identity]
+                    except (TypeError, ValueError):
+                        pass
+                    skipped += 1
+                    continue
+                if added >= remaining:
                     skipped += 1
                     continue
                 try:
-                    importance = max(1, min(5, int(item.get("importance", 3))))
+                    importance = max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(item.get("importance", 50))))
                 except (TypeError, ValueError):
-                    importance = 3
+                    importance = 50
                 category = str(item.get("category", "通用")).strip() or "通用"
                 if category not in CATEGORIES:
                     category = "其他"
@@ -305,7 +268,7 @@ class MemoryDB:
                     confidence = max(0.0, min(1.0, float(item.get("confidence", 0.8))))
                 except (TypeError, ValueError):
                     confidence = 0.8
-                self.connection.execute(
+                cursor = self.connection.execute(
                     """
                     INSERT INTO memories
                         (title, content, tags, category, importance, source, created_at, updated_at,
@@ -327,8 +290,44 @@ class MemoryDB:
                         str(item.get("last_reviewed_at", timestamp)),
                     ),
                 )
-                existing.add(identity)
+                new_id = int(cursor.lastrowid)
+                existing[identity] = new_id
+                try:
+                    id_map[int(item.get("id"))] = new_id
+                except (TypeError, ValueError):
+                    pass
                 added += 1
+            for item in source_relations:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    first_id = id_map[int(item["memory_a_id"])]
+                    second_id = id_map[int(item["memory_b_id"])]
+                    strength = max(1, min(100, int(item.get("strength", 20))))
+                    evidence = max(1, int(item.get("evidence_count", 1)))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if first_id == second_id:
+                    continue
+                first_id, second_id = sorted((first_id, second_id))
+                stamp = str(item.get("updated_at", timestamp))
+                self.connection.execute(
+                    """
+                    INSERT OR REPLACE INTO memory_relations
+                        (memory_a_id, memory_b_id, strength, evidence_count,
+                         created_at, updated_at, last_observed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        first_id,
+                        second_id,
+                        strength,
+                        evidence,
+                        str(item.get("created_at", stamp)),
+                        stamp,
+                        str(item.get("last_observed_at", stamp)),
+                    ),
+                )
         return added, skipped, invalid
 
     def close(self) -> None:
@@ -473,8 +472,8 @@ class MemoryApp:
         ttk.Combobox(form, textvariable=self.category_var, values=CATEGORIES, state="readonly", width=12).grid(
             row=1, column=1, sticky="w", pady=(0, 7)
         )
-        ttk.Label(form, text="重要度（1-5）").grid(row=1, column=2, sticky="w", padx=(18, 0), pady=(0, 7))
-        self.importance_var = tk.StringVar(value="3")
+        ttk.Label(form, text="重要度（1-100）").grid(row=1, column=2, sticky="w", padx=(18, 0), pady=(0, 7))
+        self.importance_var = tk.StringVar(value="50")
         ttk.Combobox(form, textvariable=self.importance_var, values=IMPORTANCE_VALUES, state="readonly", width=8).grid(
             row=1, column=3, sticky="w", pady=(0, 7)
         )
@@ -536,9 +535,9 @@ class MemoryApp:
         tier_rows = self.db.connection.execute(
             """
             SELECT
-                SUM(CASE WHEN importance >= 4 THEN 1 ELSE 0 END) AS important,
-                SUM(CASE WHEN importance = 3 THEN 1 ELSE 0 END) AS normal,
-                SUM(CASE WHEN importance <= 2 THEN 1 ELSE 0 END) AS unimportant
+                SUM(CASE WHEN importance >= 67 THEN 1 ELSE 0 END) AS important,
+                SUM(CASE WHEN importance >= 34 AND importance < 67 THEN 1 ELSE 0 END) AS normal,
+                SUM(CASE WHEN importance < 34 THEN 1 ELSE 0 END) AS unimportant
               FROM memories
              WHERE status = 'active'
             """
@@ -569,7 +568,7 @@ class MemoryApp:
                     row["id"],
                     title,
                     row["category"],
-                    f"{importance_level(row['importance'])} · {row['importance']}/5",
+                    f"{importance_level(row['importance'])} · {row['importance']}/100",
                     row["use_count"],
                     row["updated_at"],
                 ),
@@ -622,7 +621,7 @@ class MemoryApp:
         self.tree.selection_remove(self.tree.selection())
         self.title_var.set("")
         self.category_var.set("通用")
-        self.importance_var.set("3")
+        self.importance_var.set("50")
         self.tags_var.set("")
         self.source_var.set("")
         self.content_text.delete("1.0", "end")
@@ -639,9 +638,9 @@ class MemoryApp:
             messagebox.showwarning(APP_TITLE, "请填写整合后的内容。", parent=self.root)
             return None
         try:
-            importance = max(1, min(5, int(self.importance_var.get())))
+            importance = max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(self.importance_var.get())))
         except ValueError:
-            importance = 3
+            importance = 50
         category = self.category_var.get() if self.category_var.get() in CATEGORIES else "其他"
         return {
             "title": title,
@@ -798,7 +797,7 @@ class MemoryApp:
             "关于 Codex 记忆库",
             "本地、轻量的 Codex 长期记忆工具\n\n"
             f"容量：最多 {MAX_MEMORIES} 条\n"
-            "重要度：1–2 不重要，3 普通，4–5 重要；连续 3 天不用会降级\n"
+            "重要度：1–33 不重要，34–66 普通，67–100 重要；连续 3 天不用会降低 1 点\n"
             "存储：SQLite（本机）\n"
             "功能：搜索、分类、重要度、JSON 导入导出、记忆合并",
             parent=self.root,

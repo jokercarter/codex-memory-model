@@ -8,3 +8,11 @@ dependencies = []
 [tool.codex-memory]
 max_memories = 1000
 decay_interval_days = 3
+importance_min = 1
+importance_max = 100
+important_min = 67
+normal_min = 34
+relation_min = 1
+relation_max = 100
+relation_seed_limit = 12
+relation_expansion_limit = 32

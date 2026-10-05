@@ -37,13 +37,13 @@ def emit_context(text: str) -> None:
 def session_start(event: dict[str, Any]) -> None:
     connection = connect(read_only=True)
     try:
-        rows = search(connection, "", limit=5, min_importance=4, track_usage=False, mutate=False)
+        rows = search(connection, "", limit=5, min_importance=67, track_usage=False, mutate=False)
         current = stats(connection, mutate=False)
         context = (
             "Codex 本地长期记忆层已连接。每次处理用户请求前，优先使用与当前任务相关的记忆；"
             "若当前请求明确改变了旧信息，以当前请求为准。每轮结束时保存与用户本人有关的信息，"
             "以及未来有复用价值的项目背景、技术环境、经过验证的解决方法、操作规范、稳定决策和通用知识，"
-            "由 Codex 判断初始重要度（1–2 不重要，3 普通，4–5 重要）；重复使用会升权，连续 3 天不用会降权。"
+            "由 Codex 判断初始重要度（1–33 不重要，34–66 普通，67–100 重要）；重复使用会升权，连续 3 天不用会降低 1 点。"
             "本次检索是只读的，不会启动或控制其它应用。"
             "并用 codex_memory_commit 的 replace_ids 或 codex_memory_retire 清理错误、重复和失效记录。\n\n"
             + format_context(rows, heading="高重要度长期记忆")
@@ -77,7 +77,7 @@ def prompt(event: dict[str, Any]) -> None:
             "例如 LaTeX 编译与 PDF 转换、Chrome 控制与读取、Gradescope 批改作业等正确流程可以保存。"
             "用户已明确要求广泛保存记忆；不要因为电话号码、密码、令牌、敏感凭据或其他敏感内容而自动排除信息。"
             "仍按原子信息整理，不逐字复制完整聊天或文档；未经验证的内容标注为待确认。"
-            "由你判断初始重要度（1–2 不重要，3 普通，4–5 重要）；"
+            "由你判断 1–100 的初始重要度；"
             "遇到新结论覆盖旧结论时，"
             "先搜索旧记忆，再用 codex_memory_commit 的 replace_ids 更新；错误、重复或过时记录用"
             "codex_memory_retire 淘汰；用户要求保存的敏感信息也可以写入本地记忆。"
@@ -108,7 +108,7 @@ def stop(event: dict[str, Any]) -> None:
                     "先调用 codex_memory_search 查找相关旧记录；新事实覆盖旧事实时用 codex_memory_commit 的 replace_ids 更新，"
                     "错误、重复或过时记录用 codex_memory_retire 淘汰。用户已要求广泛保存记忆，电话号码、密码、令牌、敏感凭据等也可按原子信息写入本地记忆；"
                     "未经验证的内容标注为待确认，不要逐字复制完整聊天或文档。"
-                    "如果本轮实际依赖了已有记忆，请调用 codex_memory_mark_used 记录对应记忆 ID；记忆检索本身是只读的。"
+                    "如果本轮实际依赖了已有记忆，请调用 codex_memory_mark_used 记录对应记忆 ID；共同使用的记忆会提高相关度（1–100），记忆检索本身是只读的。"
                     "只有实际完成工具调用后才算维护完成，最后用一句话说明新增、替换、淘汰或无变化的结果。"
                 ),
             },
