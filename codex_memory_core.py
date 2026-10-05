@@ -17,7 +17,7 @@ from typing import Iterable
 
 
 MAX_MEMORIES = 1000
-DECAY_INTERVAL_HOURS = 12
+DECAY_INTERVAL_HOURS = 6
 IMPORTANCE_MIN = 1
 IMPORTANCE_MAX = 100
 IMPORTANT_MIN = 67
@@ -258,7 +258,7 @@ def table_columns(connection: sqlite3.Connection) -> set[str]:
 
 
 def apply_decay(connection: sqlite3.Connection, now: datetime | None = None) -> int:
-    """Reduce stale importance by 10% for every 12-hour interval.
+    """Reduce stale importance by 10% for every 6-hour interval.
 
     The last review timestamp is moved forward when decay is applied, so
     repeated hook calls do not subtract the same interval over and over.
