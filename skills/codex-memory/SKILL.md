@@ -83,6 +83,10 @@ When uploading or updating this model or related code on GitHub:
 - commit and push the changes on that branch;
 - open a Pull Request with a clear summary and verification notes;
 - continue an existing change on its PR branch when appropriate;
+- never include memory text, relation rows, database files, JSON exports, backups,
+  logs, hook payloads, or any local memory context in a commit;
+- inspect staged files and the diff before pushing to confirm that the change
+  contains only data-free model code, templates, and documentation;
 - never push directly to the default branch.
 
 If a Pull Request cannot be created, stop before pushing to the default branch
