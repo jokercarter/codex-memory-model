@@ -34,7 +34,7 @@ The project does not download or run a separate language model. The active Codex
 - **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、可复用的信息，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
-- **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 12 小时没有检索时乘以 0.9。
+- **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时没有检索时乘以 0.9。
 - **记忆关系 / Memory relations**：记忆之间保存 1–100 的相关度；共同使用会提高相关度，检索先取少量全文索引种子，再沿高相关度边扩展，减少无关搜索。
 - **本地管理 / Local manager**：Tkinter 管理器支持搜索、分类、重要度筛选、编辑、合并、删除、JSON 导入和 JSON 导出。
 - **轻量部署 / Lightweight deployment**：只使用 Python 标准库，不需要 pip install，MCP 通过标准输入输出运行，不监听网络端口。
@@ -314,14 +314,14 @@ Keep one information point per memory. Content may be detailed, but it should st
 - 有效容量为 1000 条；标记为 obsolete 的记录不占用有效容量。
 - 初始重要度由 Codex 判断：1–33 不重要，34–66 普通，67–100 重要。
 - 每次实际使用至少增加 20 点并乘以 1.5，最高 100。
-- 连续 12 小时没有检索时乘以 0.9，之后每 12 小时继续降低，最低 1 点。
+- 连续 6 小时没有检索时乘以 0.9，之后每 6 小时继续降低，最低 1 点。
 - 记忆之间的相关度为 1–100；相同对话中共同被实际使用的记忆会提高相关度。检索先用少量种子，再沿高相关度关系扩展。
 - 从旧版本升级时，旧的 1–5 重要度会自动映射为 1、26、51、76、100；已有记忆关系会从主题和标签自动建立。
 - 新事实覆盖旧事实时，先检索旧记录，再用 replace_ids 更新。
 - 错误、重复或过时记录用 codex_memory_retire 淘汰。
 - 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
 
-The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 12-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
 
 When upgrading from the previous 1–5 version, existing importance values are mapped to 1, 26, 51, 76, and 100. Existing memories receive initial relation edges from shared topics and tags.
 
@@ -418,7 +418,7 @@ The locations below are the values read by the runtime. Changing only the metada
 | 想修改的内容 Change | 文件和字段 File and field | 默认 Default | 注意 |
 | --- | --- | --- | --- |
 | 有效记忆容量 Active capacity | codex_memory_core.py 和 codex_memory_vault.pyw 的 MAX_MEMORIES | 1000 | 两处一起改；MCP 和管理器必须一致 |
-| 遗忘周期 Decay interval | core 的 DECAY_INTERVAL_HOURS | 12 | 单位是小时；每个周期按 0.9 倍衰减 |
+| 遗忘周期 Decay interval | core 的 DECAY_INTERVAL_HOURS | 6 | 单位是小时；每个周期按 0.9 倍衰减 |
 | 分类 Categories | core、vault 的 CATEGORIES；MCP 的 TOOLS 分类枚举 | 八类 | 三处一起改 |
 | 会话启动检索 SessionStart | codex_memory_hook.py 的 limit=5、min_importance=67 | 5 条、重要度至少 67 | 增大可能占用更多上下文 |
 | 用户消息检索 Prompt | codex_memory_hook.py 的 limit=8 | 8 条 | 增大可能影响回答上下文长度 |
@@ -543,9 +543,9 @@ This is intentional. Retrieval hooks are read-only, and Stop only requests a cur
 - obsolete 不计入有效容量；
 - 搜索不会增加使用次数；
 - 只有实际依赖后调用 codex_memory_mark_used 才会升权；
-- 遗忘按 12 小时周期在下一次写入维护或管理器刷新时应用。
+- 遗忘按 6 小时周期在下一次写入维护或管理器刷新时应用。
 
-Obsolete records do not consume active capacity. Search does not count as use when it is read-only; deliberate mark_used calls do. Each deliberate use applies the minimum +20 and 1.5x increase. Decay is applied during the next write maintenance or manager refresh, using one 0.9x step per 12 hours without retrieval.
+Obsolete records do not consume active capacity. Search does not count as use when it is read-only; deliberate mark_used calls do. Each deliberate use applies the minimum +20 and 1.5x increase. Decay is applied during the next write maintenance or manager refresh, using one 0.9x step per 6 hours without retrieval.
 
 ### 数据库被占用 / Database is locked
 
