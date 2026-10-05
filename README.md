@@ -34,7 +34,8 @@ The project does not download or run a separate language model. The active Codex
 - **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、可复用的信息，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
-- **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 判断；实际使用三次提升一级，连续三天没有检索时降低一级，范围为 1–5。
+- **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；实际使用三次提升 1 点，连续三天没有检索时降低 1 点。
+- **记忆关系 / Memory relations**：记忆之间保存 1–100 的相关度；共同使用会提高相关度，检索先取少量全文索引种子，再沿高相关度边扩展，减少无关搜索。
 - **本地管理 / Local manager**：Tkinter 管理器支持搜索、分类、重要度筛选、编辑、合并、删除、JSON 导入和 JSON 导出。
 - **轻量部署 / Lightweight deployment**：只使用 Python 标准库，不需要 pip install，MCP 通过标准输入输出运行，不监听网络端口。
 
@@ -244,7 +245,7 @@ Merge config\hooks.json.example into %USERPROFILE%\.codex\hooks.json. The three 
 
 | 事件 Event | 默认行为 Default behavior | 是否写库 Writes |
 | --- | --- | --- |
-| SessionStart | 读取最多 5 条、重要度至少 4 的高重要度记忆 | 否 No |
+| SessionStart | 读取最多 5 条、重要度至少 67 的高重要度记忆 | 否 No |
 | UserPromptSubmit | 根据当前提示词读取最多 8 条相关记忆 | 否 No |
 | Stop | 要求 Codex 在结束前完成一次维护；实际写入由 MCP 工具完成 | Hook 本身否；维护按需写入 |
 
@@ -295,7 +296,7 @@ Retrieval is read-only: it does not create records, change importance, or contro
 | --- | --- |
 | 搜索 Search | 输入关键词，回车或点击“搜索”；会查标题、内容、标签和来源 |
 | 分类筛选 Category | 选择“通用、项目、技术、决策、流程、偏好、人物、其他” |
-| 重要度筛选 Importance | 选择“重要、普通、不重要”或 1–5 的精确级别 |
+| 重要度筛选 Importance | 选择“重要、普通、不重要”或 1–100 的精确级别 |
 | 新建 New | 点击“新建”，填写标题和整合后的内容，再点“保存记忆” |
 | 编辑 Edit | 单击一条记录，修改字段后保存 |
 | 合并 Merge | 多选记录后点“合并选中”；会创建一条新记录，原记录保留 |
@@ -311,14 +312,18 @@ Keep one information point per memory. Content may be detailed, but it should st
 ## 记忆规则 / Memory rules
 
 - 有效容量为 1000 条；标记为 obsolete 的记录不占用有效容量。
-- 初始重要度由 Codex 判断：1–2 不重要，3 普通，4–5 重要。
-- 每实际使用三次提升一级，最高 5 级。
-- 连续三个自然日没有检索时降低一级，之后每三个自然日继续降低，最低 1 级。
+- 初始重要度由 Codex 判断：1–33 不重要，34–66 普通，67–100 重要。
+- 每实际使用三次提升 1 点，最高 100。
+- 连续三个自然日没有检索时降低 1 点，之后每三个自然日继续降低，最低 1 点。
+- 记忆之间的相关度为 1–100；相同对话中共同被实际使用的记忆会提高相关度。检索先用少量种子，再沿高相关度关系扩展。
+- 从旧版本升级时，旧的 1–5 重要度会自动映射为 1、26、51、76、100；已有记忆关系会从主题和标签自动建立。
 - 新事实覆盖旧事实时，先检索旧记录，再用 replace_ids 更新。
 - 错误、重复或过时记录用 codex_memory_retire 淘汰。
 - 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
 
-The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–5. Deliberate use three times promotes one level, while each three-day period without retrieval lowers one level. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Deliberate use three times raises importance by one point, while each three-day period without retrieval lowers it by one point. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+
+When upgrading from the previous 1–5 version, existing importance values are mapped to 1, 26, 51, 76, and 100. Existing memories receive initial relation edges from shared topics and tags.
 
 ## MCP 工具和参数 / MCP tools and parameters
 
@@ -331,7 +336,7 @@ MCP server name: codex-memory.
 | query | 是 Yes | — | 当前任务或关键词 |
 | limit | 否 No | 8 | 返回 1–20 条；越大注入上下文越多 |
 | category | 否 No | 空 empty | 精确分类筛选 |
-| min_importance | 否 No | 0 | 最低重要度 1–5 |
+| min_importance | 否 No | 0 | 最低重要度 1–100 |
 
 示例：
 
@@ -340,7 +345,7 @@ MCP server name: codex-memory.
   "query": "LaTeX 编译 PDF",
   "limit": 8,
   "category": "流程",
-  "min_importance": 3
+  "min_importance": 67
 }
 ~~~
 
@@ -353,7 +358,7 @@ Searching does not change any record or usage count.
 | title | 是 Yes | — | 精确、短的标题 |
 | content | 是 Yes | — | 一个可复用的信息点 |
 | category | 否 No | 通用 | 见上面的八个分类 |
-| importance | 否 No | 由模型判断 | 1–5；更新旧记录时省略可保留原值 |
+| importance | 否 No | 由模型判断 | 1–100；更新旧记录时省略可保留原值 |
 | tags | 否 No | 空 empty | 逗号分隔标签 |
 | source | 否 No | 空 empty | 来源或验证依据 |
 | memory_key | 否 No | 从标题生成 | 同一主题更新时保持不变 |
@@ -369,7 +374,7 @@ Searching does not change any record or usage count.
   "title": "GitHub 更新必须通过 Pull Request",
   "content": "以后更新仓库时先从默认分支创建专用分支，在分支上提交并推送，最后创建 Pull Request。",
   "category": "流程",
-  "importance": 5,
+  "importance": 85,
   "tags": "GitHub,Pull Request",
   "memory_key": "github-updates-use-pull-requests",
   "confidence": 1.0
@@ -381,6 +386,16 @@ Searching does not change any record or usage count.
 必须传 memory_ids 数组。它只应包含本轮确实依赖的记录，不要把搜索结果全部标记为已使用。
 
 Pass a memory_ids array containing only the records that the turn actually relied on. Do not mark every search result as used.
+
+### codex_memory_related（只读 / read-only）
+
+传入一个 memory_id，返回与它相关的记忆以及 relation_strength（1–100）。
+检索会先找到少量文本匹配的种子记忆，再沿高相关度边扩展；共同调用
+codex_memory_mark_used 的记忆会提高它们之间的相关度。
+
+Pass a memory_id to return related memories and their relation_strength (1–100).
+Search starts with a small lexical seed set and follows strong relation edges.
+Memories passed together to codex_memory_mark_used become more strongly related.
 
 ### codex_memory_retire（淘汰 / retire）
 
@@ -405,7 +420,7 @@ The locations below are the values read by the runtime. Changing only the metada
 | 有效记忆容量 Active capacity | codex_memory_core.py 和 codex_memory_vault.pyw 的 MAX_MEMORIES | 1000 | 两处一起改；MCP 和管理器必须一致 |
 | 遗忘周期 Decay interval | 上述两个文件的 DECAY_INTERVAL_DAYS | 3 | 单位是天；两处一起改 |
 | 分类 Categories | core、vault 的 CATEGORIES；MCP 的 TOOLS 分类枚举 | 八类 | 三处一起改 |
-| 会话启动检索 SessionStart | codex_memory_hook.py 的 limit=5、min_importance=4 | 5 条、重要度 4 | 增大可能占用更多上下文 |
+| 会话启动检索 SessionStart | codex_memory_hook.py 的 limit=5、min_importance=67 | 5 条、重要度至少 67 | 增大可能占用更多上下文 |
 | 用户消息检索 Prompt | codex_memory_hook.py 的 limit=8 | 8 条 | 增大可能影响回答上下文长度 |
 | 注入上下文预算 Context budget | hooks.json 的 additionalContextLimit | 示例 5000 | 太小会截断，太大可能挤占任务上下文 |
 | MCP 启动超时 Startup timeout | config.toml 的 startup_timeout_sec | 30 秒 | 只在启动很慢时增大 |
@@ -413,6 +428,9 @@ The locations below are the values read by the runtime. Changing only the metada
 | Stop hook 超时 Stop timeout | hooks.json 中 Stop hook 的 timeout | 30 秒 | 超时会导致维护提醒失败 |
 | 源文件安装目录 Source path | 安装脚本 -InstallDirectory | %USERPROFILE%\.codex\codex_memory | 不需要改源码 |
 | 数据库路径 Database path | core 的 database_path() 和 vault 的 data_directory() | %LOCALAPPDATA%\CodexMemoryVault | 当前版本没有独立 DB_PATH 参数；两处必须保持一致 |
+| 重要度范围 Importance scale | core、vault 的 IMPORTANCE_MIN/MAX 和 IMPORTANT_MIN/NORMAL_MIN | 1–100；67 起为重要 | 改动时同步 MCP 参数说明 |
+| 关系范围 Relation scale | core 的 RELATION_MIN/MAX | 1–100 | 关系边由新记忆主题匹配和共同使用自动维护 |
+| 关系扩展预算 Relation budget | core 的 RELATION_SEED_LIMIT、RELATION_EXPANSION_LIMIT | 12 个种子、32 个邻居 | 增大可覆盖更多关系，亦会增加上下文开销 |
 
 修改容量或遗忘周期的示例：
 
@@ -447,12 +465,13 @@ For frequent database moves, export JSON first, change both path functions, then
 3. 把导出的文件放在安全位置；
 4. 迁移到另一台机器后，先安装本项目，再选择“文件 → 导入 JSON”。
 
-导出的 JSON 只包含有效记忆。导入支持两种格式：
+导出的 JSON 包含有效记忆和它们之间的相关度边。导入支持三种格式：
 
 - 直接的记忆数组；
-- 包含 memories 数组的 codex-memory-v1 对象。
+- 只包含 memories 数组的 codex-memory-v1 对象；
+- 包含 memories 和 relations 数组的 codex-memory-v2 对象。
 
-Import skips duplicate title/content pairs and records beyond the 1000-record active limit. Never commit a personal export JSON or memory.db to GitHub.
+Import skips duplicate title/content pairs and records beyond the 1000-record active limit. Relation edges are restored when both endpoint memories are imported. Never commit a personal export JSON or memory.db to GitHub.
 
 ### 卸载 / Uninstall
 
