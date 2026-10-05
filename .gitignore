@@ -4,10 +4,17 @@ __pycache__/
 *.db-*
 *.sqlite
 *.sqlite-*
+*.sqlite3
+*.bak
+*.bak-*
 *.log
 *.jsonl
 memory-export*.json
 codex-memories-*.json
+memory*.json
+*memory*.json
+CodexMemoryVault/
+.codex_memory_vault/
 .env
 .env.*
 .DS_Store

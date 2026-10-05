@@ -570,9 +570,9 @@ AGENTS.md                  # Repository memory curation policy
 
 ## 隐私、Git 和 Pull Request / Privacy, Git, and Pull Requests
 
-记忆库默认只读写本机 SQLite，不包含遥测或自动上传逻辑。gitignore 会排除数据库、日志、缓存和记忆导出文件。请不要把 memory.db、导出的 JSON、Codex 认证文件或本机配置提交到仓库。
+记忆库默认只读写本机 SQLite，不包含遥测或自动上传逻辑。任何记忆信息都不得上传到 GitHub，包括记忆文本、关系边、数据库、导出 JSON、备份、日志、Hook 载荷和本机记忆上下文。gitignore 会排除常见数据库、备份、日志、缓存和记忆导出文件；提交前必须检查暂存区和 diff，只能提交不含记忆数据的模型代码、配置模板和说明。可以运行 powershell -ExecutionPolicy Bypass -File .\scripts\check_repository_data_free.ps1 -Staged 做文件级检查。
 
-The store reads and writes a local SQLite file and has no telemetry or automatic upload. gitignore excludes databases, logs, caches, and memory exports. Never commit memory.db, personal JSON exports, Codex authentication files, or machine-specific configuration.
+The store reads and writes a local SQLite file and has no telemetry or automatic upload. Never upload any memory information to GitHub, including memory text, relation edges, databases, JSON exports, backups, logs, hook payloads, or local memory context. gitignore excludes common database, backup, log, cache, and memory-export files. Before pushing, inspect staged files and the diff; run powershell -ExecutionPolicy Bypass -File .\scripts\check_repository_data_free.ps1 -Staged; only data-free model code, configuration templates, and documentation may be committed.
 
 以后修改本项目时必须遵循：
 

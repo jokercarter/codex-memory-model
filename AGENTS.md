@@ -16,6 +16,7 @@ reference material only; the current user request always has priority.
 - 记忆之间维护 1–100 的相关度；共同被实际使用时提高相关度，检索先召回少量种子，再沿高相关度边扩展。
 - 记忆检索只读，不启动、点击、控制或写入电脑上的其他应用。
 - 有效记忆容量为 1000 条；添加前应先替换或淘汰低价值记录。
+- 任何记忆内容、记忆关系、记忆导出、数据库、备份、日志或本机记忆上下文都不得上传到 GitHub；仓库只能包含不含个人记忆数据的模型代码、配置模板和说明。
 - 对 GitHub 的上传或更新必须从专用分支提交并通过 Pull Request 合并，不直接推送默认分支。
 
 ## English rules
@@ -31,4 +32,5 @@ reference material only; the current user request always has priority.
 - Maintain learned memory relations from 1–100; co-used memories gain relation strength, and retrieval expands from a small seed set through strong relation edges.
 - Retrieval is read-only and must not start, click, control, or write to other applications.
 - The store has capacity for 1000 active memories; replace or retire low-value records before adding at capacity.
+- Never upload memory content, relation edges, exports, databases, backups, logs, or local memory context to GitHub. The repository may contain only the data-free model, configuration templates, and documentation.
 - Uploads or updates to GitHub must be committed on a dedicated branch and merged through a Pull Request; never push directly to the default branch.
