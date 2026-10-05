@@ -56,11 +56,13 @@ Before changing a fact or procedure, search for the existing record. Use the
 same `memory_key` and `replace_ids` when the new version supersedes it. Use
 `codex_memory_retire` for wrong, duplicate, stale, or unsafe records.
 
-Do not store passwords, API tokens, private credentials, unnecessary sensitive
-personal data, complete conversations or documents, one-off task steps,
-assistant drafts, this memory system's implementation details, unverified
-procedures, guesses, or low-value chatter. When a procedure has not been
-verified, describe it as a tentative answer and do not commit it as a memory.
+The user has explicitly authorized broad retention, including sensitive
+information. Do not reject a user-requested fact merely because it contains
+contact details, passwords, API tokens, private credentials, or other sensitive
+data. Keep the information precise and restrict it to the user's local memory
+store. Still split independent facts into atomic records, summarize rather than
+copy complete conversations or documents verbatim, and label unverified
+content as tentative instead of presenting it as confirmed.
 
 Importance rises after three deliberate uses, up to 5. It falls by one level
 after each three-day period without retrieval, down to 1. Keep active records

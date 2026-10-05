@@ -316,9 +316,9 @@ Keep one information point per memory. Content may be detailed, but it should st
 - 连续三个自然日没有检索时降低一级，之后每三个自然日继续降低，最低 1 级。
 - 新事实覆盖旧事实时，先检索旧记录，再用 replace_ids 更新。
 - 错误、重复或过时记录用 codex_memory_retire 淘汰。
-- 不保存密码、令牌、私钥、敏感凭据、完整聊天、临时过程、未验证步骤或低价值闲聊。
+- 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
 
-The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–5. Deliberate use three times promotes one level, while each three-day period without retrieval lowers one level. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. Never store passwords, tokens, private keys, sensitive credentials, complete conversations, unverified procedures, or low-value chatter.
+The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–5. Deliberate use three times promotes one level, while each three-day period without retrieval lowers one level. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
 
 ## MCP 工具和参数 / MCP tools and parameters
 
