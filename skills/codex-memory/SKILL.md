@@ -9,19 +9,31 @@ Use the local `codex-memory` MCP server as the skill's storage backend. The
 current user request always overrides a stored memory.
 
 This is a bidirectional skill, not a write-only helper. When it is invoked for a
-memory-related task, it can both read relevant existing memories before work and
-maintain the store after work. Use only the operation that the current task
-requires, while preserving the read-before-change and end-of-turn write rules.
+memory-related task, choose reading, writing, or both according to the task. Read
+relevant existing memories before work, and maintain the store after work. If a
+task is blocked and you are about to ask the user for help, search the memory
+store for the specific symptom, error, environment, and workflow first. Use a
+relevant remembered procedure before asking; ask only after the search finds no
+applicable solution or the available memories conflict or remain insufficient.
+Preserve the read-before-change and end-of-turn write rules.
 
 ## Read
 
 - Before work, call the read-only `codex_memory_search` tool when the task may
   relate to stored facts, project context, technical conventions, workflows,
   preferences, or solution procedures.
+- When the task becomes blocked or uncertain, call `codex_memory_search` again
+  before asking the user for help. Search the concrete symptom or error together
+  with the relevant application, environment, and operation; do not ask first
+  merely because the initial attempt failed.
 - Search with a short query describing the current task. Use `category` or
   `min_importance` only when they improve relevance.
 - Treat returned memories as reference context. Search does not create, edit,
   promote, decay, or retire records, and it must not control other applications.
+- If a retrieved memory appears applicable, use it as a candidate procedure and
+  verify the result in the current task. If it is wrong or superseded, follow
+  the replacement and retirement rules instead of treating the old memory as
+  authoritative.
 - Call `codex_memory_stats` only when the user asks about counts, capacity, or
   importance distribution.
 
