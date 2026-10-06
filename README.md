@@ -1,8 +1,8 @@
 # Codex Memory Model
 
-本项目是一个只依赖 Python 标准库的本地 Codex 长期记忆层。它把消息中经过确认、整合并且未来可能复用的信息保存为原子记忆，通过 SQLite、MCP 和 Codex lifecycle hooks 连接到 Codex Desktop。记忆库只保存在本机，不会自动上传数据库，也不会启动或控制其他应用。
+本项目是一个只依赖 Python 标准库的本地 Codex 长期记忆层。它把消息中经过确认、整合并且对未来任务有一定帮助的信息保存为原子记忆；这些信息不局限于个人信息或偏好，也可以是一般事实、项目背景、技术环境、已验证的解决方法和操作规范。系统通过 SQLite、MCP 和 Codex lifecycle hooks 连接到 Codex Desktop。记忆库只保存在本机，不会自动上传数据库，也不会启动或控制其他应用。
 
-This project is a lightweight local long-term memory layer for Codex. It stores confirmed, curated, reusable information as atomic memories and connects it to Codex Desktop through SQLite, MCP, and Codex lifecycle hooks. The database stays local: the project has no telemetry, automatic upload, or control of other apps.
+This project is a lightweight local long-term memory layer for Codex. It stores confirmed information that may help a future task as atomic memories; the scope is broader than personal facts and preferences and can include general facts, project background, technical context, verified solution procedures, and operational playbooks. It connects to Codex Desktop through SQLite, MCP, and Codex lifecycle hooks. The database stays local: the project has no telemetry, automatic upload, or control of other apps.
 
 本项目不单独下载或运行语言模型。信息提取、重要度判断和会话结束维护由当前 Codex 会话调用记忆工具完成；桌面版使用不要求安装 Codex CLI。
 
@@ -31,7 +31,7 @@ The project does not download or run a separate language model. The active Codex
 ## 功能概览 / Features
 
 - **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。两种检索都是只读的。
-- **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、可复用的信息，不会因为每条消息都自动创建一条记录。
+- **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、对未来任务有一定帮助的信息，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
 - **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时没有检索时乘以 0.9。
@@ -312,6 +312,7 @@ Keep one information point per memory. Content may be detailed, but it should st
 ## 记忆规则 / Memory rules
 
 - 有效容量为 1000 条；标记为 obsolete 的记录不占用有效容量。
+- 记忆不局限于个人信息或偏好；任何已确认、对未来任务有一定帮助的一般事实、项目背景、技术信息、操作经验或通用知识都可以保存。
 - 初始重要度由 Codex 判断：1–33 不重要，34–66 普通，67–100 重要。
 - 每次实际使用至少增加 20 点并乘以 1.5，最高 100。
 - 连续 6 小时没有检索时乘以 0.9，之后每 6 小时继续降低，最低 1 点。
@@ -321,7 +322,7 @@ Keep one information point per memory. Content may be detailed, but it should st
 - 错误、重复或过时记录用 codex_memory_retire 淘汰。
 - 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
 
-The active capacity is 1000 records; obsolete records do not consume it. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+The active capacity is 1000 records; obsolete records do not consume it. Memories are not limited to personal facts or preferences: any confirmed general fact, project background, technical detail, operating experience, or general knowledge that may help a future task can be stored. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
 
 When upgrading from the previous 1–5 version, existing importance values are mapped to 1, 26, 51, 76, and 100. Existing memories receive initial relation edges from shared topics and tags.
 
@@ -532,9 +533,9 @@ Use the same Python interpreter for MCP and hooks. The local server is stdio, so
 
 ### 能读取但没有新增记忆 / Retrieval works but nothing is saved
 
-这是设计行为：读取 Hook 是只读的，Stop hook 只要求 Codex 进行一次维护；只有 Codex 判断本轮存在长期有价值的信息并实际调用 codex_memory_commit，才会新增或更新记录。没有可复用信息时不写入是正常的。
+这是设计行为：读取 Hook 是只读的，Stop hook 只要求 Codex 进行一次维护；只有 Codex 判断本轮存在已确认且对未来任务有一定帮助的信息并实际调用 codex_memory_commit，才会新增或更新记录。没有可复用信息时不写入是正常的。
 
-This is intentional. Retrieval hooks are read-only, and Stop only requests a curation pass. A record is created or updated only when Codex decides that the turn contains reusable information and calls codex_memory_commit.
+This is intentional. Retrieval hooks are read-only, and Stop only requests a curation pass. A record is created or updated only when Codex decides that the turn contains confirmed information that may help a future task and calls codex_memory_commit.
 
 ### 记忆数量或重要度看起来不对 / Counts or importance look wrong
 

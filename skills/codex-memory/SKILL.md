@@ -37,9 +37,10 @@ Only write during end-of-turn curation, or when the user explicitly asks to
 create/update/delete memory. Split a message into separate MCP calls when it
 contains independent information points.
 
-Memory may contain:
+Memory may contain any confirmed information that may help a future task, including:
 
 - confirmed user facts and durable preferences;
+- useful general facts and background, even when they are not about the user;
 - recurring project background, technical environment conventions, workflows,
   and stable decisions;
 - general information that is likely to be reused;
