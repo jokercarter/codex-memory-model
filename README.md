@@ -30,7 +30,7 @@ The project does not download or run a separate language model. The active Codex
 
 ## 功能概览 / Features
 
-- **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。两种检索都是只读的。
+- **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。任务遇到阻塞、准备向用户求助前，Codex 还会针对症状、错误、应用和环境再次检索。所有检索都是只读的。
 - **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、对未来任务有一定帮助且带有必要使用语境的信息，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
@@ -270,8 +270,9 @@ Do not change the three action arguments passed to the script: session-start, pr
 
 1. 新会话或恢复会话时，SessionStart 提供高重要度背景；
 2. 每次提交用户消息时，UserPromptSubmit 按当前任务检索；
-3. 每轮结束时，Stop hook 提醒 Codex 只整理长期有价值的信息；
-4. 只有 Codex 实际调用写入工具时，数据库才会新增、替换或淘汰记录。
+3. 任务遇到无法解决的情况时，准备向用户求助前先按具体症状、错误、应用和环境再次检索；
+4. 每轮结束时，Stop hook 提醒 Codex 只整理长期有价值的信息；
+5. 只有 Codex 实际调用写入工具时，数据库才会新增、替换或淘汰记录。
 
 也可以在 Codex 中显式使用 Skill 名称 $codex-memory；自动 Hook 和显式 Skill
 使用同一个本地 MCP 服务和同一个数据库。
@@ -280,8 +281,9 @@ After installation and restart, no special command is required in each chat:
 
 1. SessionStart provides high-importance background;
 2. UserPromptSubmit searches for task-relevant memories;
-3. Stop requests one curation pass;
-4. The database changes only when Codex calls a write tool.
+3. Before asking the user for help when a task is blocked, Codex searches again using the concrete symptom or error, application, and environment;
+4. Stop requests one curation pass;
+5. The database changes only when Codex calls a write tool.
 
 You can also invoke the skill explicitly with $codex-memory. Explicit use and
 automatic hooks share the same local MCP server and database.
