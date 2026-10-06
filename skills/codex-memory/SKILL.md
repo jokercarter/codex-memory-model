@@ -51,8 +51,12 @@ Memory may contain any confirmed information that may help a future task, includ
 For each new point, call `codex_memory_commit` with a precise title and content,
 one atomic fact, an appropriate category, and a model-judged initial importance
 from 1 to 100. Treat 1-33 as unimportant, 34-66 as normal, and 67-100 as
-important. Preserve enough conditions and steps to make the memory useful
-later; do not copy the conversation verbatim.
+important. Preserve enough context for the record to stand on its own: state
+the applicable scenario, prerequisites or trigger, version or scope, and any
+important conditions or steps when they affect how the fact should be used.
+Use the content itself for essential context; tags and source can supplement it
+but should not be the only place where the usage scenario is recorded. Do not
+copy the conversation verbatim.
 
 Memories can have learned relations with strength from 1 to 100. Deliberately
 using memories together increases their relation strength. Search starts with

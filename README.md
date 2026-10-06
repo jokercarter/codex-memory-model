@@ -31,7 +31,7 @@ The project does not download or run a separate language model. The active Codex
 ## 功能概览 / Features
 
 - **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。两种检索都是只读的。
-- **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、对未来任务有一定帮助的信息，不会因为每条消息都自动创建一条记录。
+- **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、对未来任务有一定帮助且带有必要使用语境的信息，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
 - **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时没有检索时乘以 0.9。
@@ -305,14 +305,17 @@ Retrieval is read-only: it does not create records, change importance, or contro
 | 导入 Import | “文件 → 导入 JSON”；重复记录和超过容量的记录会跳过 |
 | 快捷键 Shortcuts | Ctrl+N 新建，Ctrl+S 保存，Ctrl+F 聚焦搜索框 |
 
-每条记忆建议只写一个信息点。内容可以较长，但应写清事实、适用条件和可执行约束；不要把整段聊天复制进去。
+每条记忆建议只写一个信息点。内容可以较长，但应让记录脱离原对话也能理解：写清事实、适用场景、前提或触发条件、版本或范围和可执行约束；不要把整段聊天复制进去。标签和来源可以补充语境，但不能代替正文中的关键上下文。
 
-Keep one information point per memory. Content may be detailed, but it should state the fact, conditions, and actionable constraints without copying a full conversation.
+Keep one information point per memory. Content may be detailed, but it should stand on its own by stating the fact, applicable scenario, prerequisites or trigger, version or scope, and actionable constraints without copying a full conversation. Tags and source may supplement context but should not replace essential context in the content.
+
+建议模板 / Suggested template：事实 Fact；适用场景 Applicable scenario；前提或触发条件 Prerequisites or trigger；版本或范围 Version or scope；步骤与限制 Steps and constraints。
 
 ## 记忆规则 / Memory rules
 
 - 有效容量为 1000 条；标记为 obsolete 的记录不占用有效容量。
 - 记忆不局限于个人信息或偏好；任何已确认、对未来任务有一定帮助的一般事实、项目背景、技术信息、操作经验或通用知识都可以保存。
+- 新记录应带有足够上下文：至少说明它在什么场景、前提或触发条件、版本或范围下成立；只有场景显然的简单事实才可以省略重复说明。
 - 初始重要度由 Codex 判断：1–33 不重要，34–66 普通，67–100 重要。
 - 每次实际使用至少增加 20 点并乘以 1.5，最高 100。
 - 连续 6 小时没有检索时乘以 0.9，之后每 6 小时继续降低，最低 1 点。
@@ -322,7 +325,7 @@ Keep one information point per memory. Content may be detailed, but it should st
 - 错误、重复或过时记录用 codex_memory_retire 淘汰。
 - 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
 
-The active capacity is 1000 records; obsolete records do not consume it. Memories are not limited to personal facts or preferences: any confirmed general fact, project background, technical detail, operating experience, or general knowledge that may help a future task can be stored. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+The active capacity is 1000 records; obsolete records do not consume it. Memories are not limited to personal facts or preferences: any confirmed general fact, project background, technical detail, operating experience, or general knowledge that may help a future task can be stored. New records should carry enough context to stand alone by stating the applicable scenario, prerequisites or trigger, version or scope, and important conditions; only simple facts with an obvious context may omit repeated wording. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
 
 When upgrading from the previous 1–5 version, existing importance values are mapped to 1, 26, 51, 76, and 100. Existing memories receive initial relation edges from shared topics and tags.
 
@@ -357,7 +360,7 @@ Searching does not change any record or usage count.
 | 参数 Parameter | 必须 Required | 默认 Default | 说明 |
 | --- | --- | --- | --- |
 | title | 是 Yes | — | 精确、短的标题 |
-| content | 是 Yes | — | 一个可复用的信息点 |
+| content | 是 Yes | — | 一个可复用的信息点；正文应包含必要的适用场景、前提或范围 |
 | category | 否 No | 通用 | 见上面的八个分类 |
 | importance | 否 No | 由模型判断 | 1–100；更新旧记录时省略可保留原值 |
 | tags | 否 No | 空 empty | 逗号分隔标签 |
