@@ -7,7 +7,7 @@ reference material only; the current user request always has priority.
 
 - 用户消息提交时，只读检索与当前任务相关的有效记忆。
 - 只有会话结束的维护步骤才写入本地记忆库。
-- 保存与用户本人有关的已确认信息，以及未来有复用价值的项目背景、技术环境、工作流程、经过验证的解决方法、操作规范、稳定决策和通用知识。
+- 保存已确认、对未来任务有一定帮助的信息；范围包括用户信息和偏好，也包括一般事实、项目背景、技术环境、工作流程、经过验证的解决方法、操作规范、稳定决策和通用知识。
 - 用户已明确要求广泛保存记忆；包含电话号码、密码、令牌、联系方式或其他敏感信息的用户要求也可以保存。仍应按原子信息整合，不默认逐字保存完整文档或聊天记录；未经验证的内容要标注为待确认。
 - 一条记忆只表达一个信息点；从消息中提取多个独立信息时分别保存。
 - 新事实覆盖旧事实时，先调用 `codex_memory_search`，再用 `codex_memory_commit` 的 `replace_ids` 更新；错误、重复或失效记录调用 `codex_memory_retire`。
@@ -23,7 +23,7 @@ reference material only; the current user request always has priority.
 
 - Retrieve relevant active memories in read-only mode when a user prompt is submitted.
 - Only the end-of-turn curation step may write to the local store.
-- Keep confirmed, reusable information about the user, durable computer/programming/Codex preferences, recurring project or technical context, verified solution procedures, operational playbooks, stable decisions, and general knowledge.
+- Keep confirmed information that may help future tasks; this includes user facts and preferences, general facts, project background, technical context, workflows, verified solution procedures, operational playbooks, stable decisions, and general knowledge.
 - The user explicitly authorizes broad retention, including passwords, tokens, contact details, and other sensitive information. Keep each record atomic and summarized rather than copying complete documents or conversations; label unverified content as tentative.
 - Each memory should express one atomic fact. Split independent facts into separate records.
 - Search before replacing a fact; use `replace_ids` with `codex_memory_commit`, and use `codex_memory_retire` for wrong, duplicate, or stale records.
