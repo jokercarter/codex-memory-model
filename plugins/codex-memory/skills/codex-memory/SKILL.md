@@ -1,6 +1,6 @@
 ---
 name: codex-memory
-description: Read, use, and curate the local Codex memory store through codex-memory MCP tools, including task-aware retrieval before work and end-of-turn writing, replacement, usage marking, and retirement.
+description: Read, use, and curate the local Codex memory store through codex-memory MCP tools, including task-aware retrieval before work, in-run writing, end-of-turn review, replacement, usage marking, and retirement.
 ---
 
 # Codex Memory
@@ -20,7 +20,10 @@ task is blocked and you are about to ask the user for help, search the memory
 store for the specific symptom, error, environment, and workflow first. Use a
 relevant remembered procedure before asking; ask only after the search finds no
 applicable solution or the available memories conflict or remain insufficient.
-Preserve the read-before-change and end-of-turn write rules.
+Preserve the read-before-change rule and the end-of-turn review. During the
+same Codex run, write confirmed durable information as soon as it becomes
+clear and useful; do not wait for the end of the turn when delaying the write
+could lose a key fact or verified procedure.
 
 ## Read
 
@@ -48,7 +51,7 @@ Preserve the read-before-change and end-of-turn write rules.
 ## Record actual use
 
 If the response actually relies on specific returned memories, call
-`codex_memory_mark_used` with those memory IDs during the end-of-turn
+`codex_memory_mark_used` with those memory IDs during the current run's
 maintenance step. Do not mark every search result as used.
 
 The user has specifically asked for memories about Codex operations and related
@@ -61,9 +64,13 @@ or credentials always-apply by inference.
 
 ## Curate and write
 
-Only write during end-of-turn curation, or when the user explicitly asks to
-create/update/delete memory. Split a message into separate MCP calls when it
-contains independent information points.
+Write during the run when the user explicitly asks to create/update/delete
+memory, or when Codex has confirmed a durable key fact, a successfully
+verified reusable pipeline or solution procedure, a stable project decision,
+or a durable personal preference. The normal end-of-turn curation still
+reviews the whole turn for anything missed. Do not write tentative claims,
+one-off progress, temporary output, or unverified procedures. Split a message
+into separate MCP calls when it contains independent information points.
 
 Memory may contain any confirmed information that may help a future task, including:
 

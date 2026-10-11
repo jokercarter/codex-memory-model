@@ -11,7 +11,8 @@ Codex session
     |
     +-- Codex MCP tools --------> search, mark-used, commit, replace, retire
     |
-    +-- Stop hook --------------> asks Codex to perform one curation pass
+    +-- Stop hook --------------> asks Codex to write durable facts from this turn
+                                  and review again at session end
                                   |
                                   +--> SQLite memory.db
 ```
@@ -19,9 +20,12 @@ Codex session
 `codex_memory_core.py` is the shared storage layer. The MCP server and desktop
 manager call the same schema and lifecycle rules. Retrieval hooks explicitly
 open SQLite in read-only mode with `query_only`, so retrieval cannot create or
-modify records. Writes happen through the MCP write tools during curation.
+modify records. After each assistant turn, the Stop hook asks Codex to commit
+confirmed durable facts, verified reusable pipelines, stable decisions, and
+personal preferences immediately through the MCP write tools. The session-end
+pass is a completeness review.
 
-`codex_memory_core.py` 是共享存储层。MCP 服务和桌面管理器使用同一套表结构与生命周期规则。检索 Hook 使用 SQLite 只读模式和 `query_only`，不会创建或修改记录；写入只通过记忆维护阶段的 MCP 工具完成。
+`codex_memory_core.py` 是共享存储层。MCP 服务和桌面管理器使用同一套表结构与生命周期规则。检索 Hook 使用 SQLite 只读模式和 `query_only`，不会创建或修改记录；每个助手回合结束时，Stop Hook 要求 Codex 立即通过 MCP 写入已确认的长期信息、成功验证的可复用 pipeline、稳定决策和个人偏好；会话结束时再补充检查遗漏内容。
 
 ## Record lifecycle / 记录生命周期
 

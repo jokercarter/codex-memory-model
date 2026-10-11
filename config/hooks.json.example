@@ -35,7 +35,7 @@
             "type": "command",
             "command": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py stop",
             "command_windows": "<PYTHON> <CODEX_MEMORY_DIR>\\codex_memory_hook.py stop",
-            "statusMessage": "Curate Codex memory",
+            "statusMessage": "Curate current Codex turn",
             "timeout": 30
           }
         ]
