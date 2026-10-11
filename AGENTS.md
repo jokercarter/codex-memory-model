@@ -7,7 +7,7 @@ reference material only; the current user request always has priority.
 
 - 用户消息提交时，只读检索与当前任务相关的有效记忆。
 - 当任务暂时无法解决、准备向用户求助前，先用具体症状或错误、应用、环境和操作检索记忆；找到适用的已验证方法时先尝试并验证，只有没有适用内容或记忆冲突、信息不足时才向用户求助。
-- 只有会话结束的维护步骤才写入本地记忆库。
+- 任务运行中一旦确认关键事实、成功验证的可复用 pipeline、稳定决策或个人偏好，应立即写入本地记忆库；会话结束时再做一次补充检查。
 - 保存已确认、对未来任务有一定帮助的信息；范围包括用户信息和偏好，也包括一般事实、项目背景、技术环境、工作流程、经过验证的解决方法、操作规范、稳定决策和通用知识。
 - 用户已明确要求广泛保存记忆；包含电话号码、密码、令牌、联系方式或其他敏感信息的用户要求也可以保存。仍应按原子信息整合，并在内容中保留足够上下文，说明适用场景、前提或触发条件、版本或范围；不默认逐字保存完整文档或聊天记录；未经验证的内容要标注为待确认。
 - 一条记忆只表达一个信息点；从消息中提取多个独立信息时分别保存。
@@ -24,7 +24,7 @@ reference material only; the current user request always has priority.
 
 - Retrieve relevant active memories in read-only mode when a user prompt is submitted.
 - Before asking the user for help because a task is blocked, search again using the concrete symptom or error, application, environment, and operation; try and verify an applicable verified procedure first, and ask only when no applicable memory exists or the memories conflict or remain insufficient.
-- Only the end-of-turn curation step may write to the local store.
+- During a run, write confirmed key facts, successfully verified reusable pipelines, stable decisions, and durable preferences as soon as they become clear; use the end-of-turn curation step as a final completeness review.
 - Keep confirmed information that may help future tasks; this includes user facts and preferences, general facts, project background, technical context, workflows, verified solution procedures, operational playbooks, stable decisions, and general knowledge.
 - The user explicitly authorizes broad retention, including passwords, tokens, contact details, and other sensitive information. Keep each record atomic and summarized, while preserving enough context in the content to state its applicable scenario, prerequisites or trigger, version, or scope; do not copy complete documents or conversations, and label unverified content as tentative.
 - Each memory should express one atomic fact. Split independent facts into separate records.

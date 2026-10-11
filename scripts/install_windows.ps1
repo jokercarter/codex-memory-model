@@ -163,7 +163,7 @@ if (Test-Path -LiteralPath $hooksPath) {
 }
 Set-HookEvent $hooksConfig "SessionStart" $pythonCommand $hookPath "session-start" "Load Codex long-term memory" "startup|resume|clear|compact" 5000
 Set-HookEvent $hooksConfig "UserPromptSubmit" $pythonCommand $hookPath "prompt" "Search Codex long-term memory"
-Set-HookEvent $hooksConfig "Stop" $pythonCommand $hookPath "stop" "Curate Codex memory"
+Set-HookEvent $hooksConfig "Stop" $pythonCommand $hookPath "stop" "Curate current Codex turn"
 $hooksConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $hooksPath -Encoding UTF8
 Write-Host "Updated hooks: $hooksPath"
 

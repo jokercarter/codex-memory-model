@@ -4,9 +4,9 @@
 
 This project is a lightweight local long-term memory layer for Codex. It stores confirmed information that may help a future task as atomic memories; the scope is broader than personal facts and preferences and can include general facts, project background, technical context, verified solution procedures, and operational playbooks. It connects to Codex Desktop through SQLite, MCP, and Codex lifecycle hooks. The database stays local: the project has no telemetry, automatic upload, or control of other apps.
 
-本项目不单独下载或运行语言模型。信息提取、重要度判断和会话结束维护由当前 Codex 会话调用记忆工具完成；桌面版使用不要求安装 Codex CLI。
+本项目不单独下载或运行语言模型。信息提取、重要度判断以及回合中的及时写入和会话结束复核由当前 Codex 会话调用记忆工具完成；桌面版使用不要求安装 Codex CLI。
 
-The project does not download or run a separate language model. The active Codex session performs extraction, importance judgment, and end-of-turn curation through the memory tools. Codex Desktop can use it without the Codex CLI.
+The project does not download or run a separate language model. The active Codex session performs extraction, importance judgment, in-run writes, and a session-end completeness review through the memory tools. Codex Desktop can use it without the Codex CLI.
 
 ## 先看这里：最快的使用方式 / Fastest path
 
@@ -31,7 +31,7 @@ The project does not download or run a separate language model. The active Codex
 ## 功能概览 / Features
 
 - **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。任务遇到阻塞、准备向用户求助前，Codex 还会针对症状、错误、应用和环境再次检索。所有检索都是只读的。
-- **会话结束维护 / End-of-turn curation**：Stop hook 会提醒 Codex 只保存精确、对未来任务有一定帮助且带有必要使用语境的信息，不会因为每条消息都自动创建一条记录。
+- **回合内及时维护 / In-run curation**：Stop hook 在每个助手回合结束前提醒 Codex 立即保存已确认、可复用且带有必要使用语境的信息；会话结束时再补充检查，不会因为每条消息都自动创建一条记录。
 - **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
 - **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
 - **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时没有检索时乘以 0.9。
@@ -41,7 +41,7 @@ The project does not download or run a separate language model. The active Codex
 
 The codex-memory skill supports both read and write workflows: it retrieves
 relevant memories before work and can mark, create, replace, or retire memories
-during end-of-turn curation. It is not a write-only tool.
+during the run and in the session-end review. It is not a write-only tool.
 
 ## 系统要求 / Requirements
 
@@ -309,8 +309,8 @@ Do not change the three action arguments passed to the script: session-start, pr
 1. 新会话或恢复会话时，SessionStart 提供高重要度背景；
 2. 每次提交用户消息时，UserPromptSubmit 按当前任务检索；
 3. 任务遇到无法解决的情况时，准备向用户求助前先按具体症状、错误、应用和环境再次检索；
-4. 每轮结束时，Stop hook 提醒 Codex 只整理长期有价值的信息；
-5. 只有 Codex 实际调用写入工具时，数据库才会新增、替换或淘汰记录。
+4. 每个助手回合结束时，Stop hook 要求 Codex 立即整理并写入本回合已确认的长期信息、成功验证的 pipeline、稳定决策和个人偏好；
+5. 会话结束时再做一次补充检查；只有 Codex 实际调用写入工具时，数据库才会新增、替换或淘汰记录。
 
 也可以在 Codex 中显式使用 Skill 名称 $codex-memory；自动 Hook 和显式 Skill
 使用同一个本地 MCP 服务和同一个数据库。
@@ -320,8 +320,8 @@ After installation and restart, no special command is required in each chat:
 1. SessionStart provides high-importance background;
 2. UserPromptSubmit searches for task-relevant memories;
 3. Before asking the user for help when a task is blocked, Codex searches again using the concrete symptom or error, application, and environment;
-4. Stop requests one curation pass;
-5. The database changes only when Codex calls a write tool.
+4. Stop requests immediate curation of confirmed durable facts from the current assistant turn;
+5. Session end performs a completeness review, and the database changes only when Codex calls a write tool.
 
 You can also invoke the skill explicitly with $codex-memory. Explicit use and
 automatic hooks share the same local MCP server and database.
@@ -578,7 +578,7 @@ Use the same Python interpreter for MCP and hooks. The local server is stdio, so
 
 这是设计行为：读取 Hook 是只读的，Stop hook 只要求 Codex 进行一次维护；只有 Codex 判断本轮存在已确认且对未来任务有一定帮助的信息并实际调用 codex_memory_commit，才会新增或更新记录。没有可复用信息时不写入是正常的。
 
-This is intentional. Retrieval hooks are read-only, and Stop only requests a curation pass. A record is created or updated only when Codex decides that the turn contains confirmed information that may help a future task and calls codex_memory_commit.
+This is intentional. Retrieval hooks are read-only, and Stop requests immediate curation of the current assistant turn. A record is created or updated only when Codex decides that the turn contains confirmed information that may help a future task and calls codex_memory_commit; the session-end pass checks for anything missed.
 
 ### 记忆数量或重要度看起来不对 / Counts or importance look wrong
 
