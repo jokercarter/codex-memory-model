@@ -29,9 +29,18 @@ try {
     $violations = @(
         $paths | Where-Object {
             $path = $_
-            $forbiddenPatterns | Where-Object {
-                $path -like $_
+            # Plugin metadata is configuration code, not a memory export. Its
+            # filename contains "memory" by design, so exempt only standard
+            # metadata locations inside a plugin package.
+            if ($path -match '(^|[\\/])plugins[\\/][^\\/]+[\\/](\.codex-plugin[\\/]plugin\.json|\.mcp\.json)$') {
+                return $false
             }
+            foreach ($pattern in $forbiddenPatterns) {
+                if ($path -like $pattern) {
+                    return $true
+                }
+            }
+            return $false
         }
     ) | Sort-Object -Unique
     if ($violations.Count -gt 0) {

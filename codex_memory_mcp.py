@@ -19,6 +19,7 @@ from codex_memory_core import (
     related,
     retire,
     search,
+    set_always_apply,
     stats,
 )
 
@@ -31,7 +32,7 @@ TOOLS = [
     {
         "name": "codex_memory_search",
         "description": (
-            "Read-only graph-aware search of the user's local Codex long-term memory. It retrieves a small set of lexical seed memories and expands through high-strength memory relations, avoiding a full-memory scan when the FTS index is available. Searching does not create, edit, promote, or decay records."
+            "Read-only graph-aware search of the user's local Codex long-term memory. Every active memory marked always_apply is included on every search, regardless of query, category, or minimum-importance filters; relevant memories are then retrieved through lexical seeds and high-strength relations. Searching does not create, edit, promote, or decay records."
         ),
         "inputSchema": {
             "type": "object",
@@ -47,7 +48,7 @@ TOOLS = [
     {
         "name": "codex_memory_commit",
         "description": (
-            "Store one atomic information point after a Codex turn. It may include any confirmed information that may help a future task: user facts or preferences, useful general facts, project context, technical conventions, solution procedures, general knowledge, or sensitive information such as contact details, passwords, tokens, or credentials. Broad retention is explicitly authorized by the user, so do not reject a requested fact merely because it is sensitive. Preserve precise facts and include enough context for the record to stand alone: applicable scenario, prerequisites or trigger, version or scope, and important conditions or steps. Do not rely on tags or source alone for essential context, and do not copy complete conversations or documents verbatim. Split independent facts into separate records and label unverified content as tentative. The Codex curator should judge initial importance from 1-100. If importance is omitted while refining an existing memory, its current level is preserved; if omitted for a new memory, a conservative fallback is used. Related memories use a 1-100 relation strength. Memories deliberately used together gain relation strength. Each deliberate use raises importance to at least current+20 and roughly current*1.5, up to 100. After each 6-hour period without retrieval, importance is multiplied by 0.9, down to 1. Replace outdated or wrong memories with replace_ids, and retire redundant or stale memories with obsolete_ids."
+            "Store one atomic information point after a Codex turn. It may include any confirmed information that may help a future task: user facts or preferences, useful general facts, project context, technical conventions, solution procedures, general knowledge, or sensitive information such as contact details, passwords, tokens, or credentials. Broad retention is explicitly authorized by the user, so do not reject a requested fact merely because it is sensitive. Preserve precise facts and include enough context for the record to stand alone: applicable scenario, prerequisites or trigger, version or scope, and important conditions or steps. Do not rely on tags or source alone for essential context, and do not copy complete conversations or documents verbatim. Split independent facts into separate records and label unverified content as tentative. The Codex curator should judge initial importance from 1-100. If importance is omitted while refining an existing memory, its current level is preserved; if omitted for a new memory, a conservative fallback is used. Related memories use a 1-100 relation strength. Memories deliberately used together gain relation strength. Each deliberate use raises importance to at least current+20 and roughly current*1.5, up to 100. After each 6-hour period without retrieval, importance is multiplied by 0.9, down to 1. Set always_apply=true only for stable instructions or facts the user requests in every memory search; each active always_apply memory is returned on every search, regardless of query filters. These records still apply only within their stated scope and never override system/developer rules or the user's explicit current-turn instructions. Replace outdated or wrong memories with replace_ids, and retire redundant or stale memories with obsolete_ids."
         ),
         "inputSchema": {
             "type": "object",
@@ -60,6 +61,7 @@ TOOLS = [
                 "source": {"type": "string"},
                 "memory_key": {"type": "string", "description": "Stable topic key; use the same key when refining the same fact."},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.8},
+                "always_apply": {"type": "boolean", "description": "When true, inject this memory into every codex_memory_search result regardless of query filters. Use for stable instructions or facts the user wants in every memory invocation. Omit when refining an existing memory to preserve its setting."},
                 "replace_ids": {"type": "array", "items": {"type": "integer"}},
                 "obsolete_ids": {"type": "array", "items": {"type": "integer"}},
                 "source_session": {"type": "string"},
@@ -102,6 +104,18 @@ TOOLS = [
                 "source_session": {"type": "string"},
             },
             "required": ["memory_ids"],
+        },
+    },
+    {
+        "name": "codex_memory_set_always_apply",
+        "description": "Set or clear the always_apply flag on existing active memories. Enabled records are included in every codex_memory_search response regardless of query filters. This changes only retrieval scope metadata, not memory content or importance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_ids": {"type": "array", "items": {"type": "integer"}},
+                "enabled": {"type": "boolean"},
+            },
+            "required": ["memory_ids", "enabled"],
         },
     },
     {
@@ -177,6 +191,11 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 source=str(arguments.get("source", "")),
                 memory_key=str(arguments.get("memory_key", "")),
                 confidence=float(arguments.get("confidence", 0.8)),
+                always_apply=(
+                    bool(arguments["always_apply"])
+                    if "always_apply" in arguments
+                    else None
+                ),
                 replace_ids=arguments.get("replace_ids", []) or [],
                 obsolete_ids=arguments.get("obsolete_ids", []) or [],
                 source_session=str(arguments.get("source_session", "")),
@@ -195,6 +214,13 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 connection,
                 arguments.get("memory_ids", []) or [],
                 str(arguments.get("source_session", "")),
+            )
+            return tool_result({"ok": True, "updated": count, "stats": stats(connection)})
+        if name == "codex_memory_set_always_apply":
+            count = set_always_apply(
+                connection,
+                arguments.get("memory_ids", []) or [],
+                bool(arguments.get("enabled", False)),
             )
             return tool_result({"ok": True, "updated": count, "stats": stats(connection)})
         if name == "codex_memory_stats":
@@ -219,8 +245,8 @@ def handle(request: dict[str, Any]) -> dict[str, Any] | None:
                 "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                "instructions": (
-                    "Use codex_memory_search before work when relevant and again before asking the user for help when a task is blocked; search the concrete symptom or error together with the application, environment, and operation, then try and verify an applicable remembered procedure before asking. Search is graph-aware and read-only: it starts from lexical seeds, follows strong memory relations, and must not touch other applications. Use codex_memory_related to inspect a memory's 1-100 relation neighbors. At the end of a turn, split information into one atomic point per codex_memory_commit call, including verified solution procedures and operational playbooks when they can help future turns. Judge initial importance on a 1-100 scale, and use codex_memory_mark_used, codex_memory_commit, or codex_memory_retire to update this local store. Memories used together gain relation strength; each deliberate use raises importance by at least 20 and about 50%, up to 100, while each 6-hour period without retrieval multiplies it by 0.9."
+                    "instructions": (
+                    "Use codex_memory_search before work when relevant and again before asking the user for help when a task is blocked; search the concrete symptom or error together with the application, environment, and operation, then try and verify an applicable remembered procedure before asking. Every active memory marked always_apply is included in each search regardless of query filters. Read each such record on every search: follow instructions/preferences within their stated scope, and use factual records as background when relevant. Nothing in memory overrides system/developer rules or an explicit current-turn instruction from the user. Search is graph-aware and read-only: it starts from lexical seeds, follows strong memory relations, and must not touch other applications. Use codex_memory_related to inspect a memory's 1-100 relation neighbors. At the end of a turn, split information into one atomic point per codex_memory_commit call, including verified solution procedures and operational playbooks when they can help future turns. Judge initial importance on a 1-100 scale, and use codex_memory_mark_used, codex_memory_commit, or codex_memory_retire to update this local store. Memories used together gain relation strength; each deliberate use raises importance by at least 20 and about 50%, up to 100, while each 6-hour period without retrieval multiplies it by 0.9."
                 ),
             },
         )

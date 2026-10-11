@@ -153,6 +153,44 @@ Select-String -Path (Join-Path $env:USERPROFILE ".codex\hooks.json") -Pattern "c
 Each Test-Path should return True, and Select-String should show the MCP and
 hook configuration lines.
 
+## 作为 Codex 插件安装 / Install as a Codex plugin
+
+仓库同时提供一个可从本地 Marketplace 安装的插件包。插件包只包含代码、Skill、启动器和配置模板；本地 SQLite 数据库、关系、导出文件、日志和 Hook 上下文仍保存在电脑上。插件通过相对路径启动 MCP，不要求 API key，也不会把记忆上传到 GitHub。
+
+The repository also contains a local Marketplace plugin package. The package
+contains only code, the Skill, launchers, and configuration templates. The
+SQLite store, relations, exports, logs, and hook context remain on the local
+machine. The plugin starts MCP through a relative launcher, needs no API key,
+and does not upload memories to GitHub.
+
+### 本地 Marketplace / Local Marketplace
+
+在 Codex Desktop 的插件设置中添加仓库内的 `.agents/plugins/marketplace.json`，然后启用 `codex-memory`。如果当前版本没有图形化的本地 Marketplace 选择器，可以把 `plugins/codex-memory` 作为插件目录提供给 Codex，或继续使用上面的安装脚本和手动 MCP 配置。
+
+Add `.agents/plugins/marketplace.json` from this repository in Codex Desktop's
+plugin settings, then enable `codex-memory`. If the installed Codex version
+does not expose a local Marketplace picker, use `plugins/codex-memory` as the
+plugin directory, or use the installer and manual MCP configuration above.
+
+插件目录中的关键文件：
+
+~~~text
+.agents/plugins/marketplace.json          # Marketplace entry
+plugins/codex-memory/.codex-plugin/       # Plugin manifest
+plugins/codex-memory/.mcp.json            # Relative stdio MCP configuration
+plugins/codex-memory/runtime/             # Data-free Python runtime
+plugins/codex-memory/scripts/             # Windows launchers
+plugins/codex-memory/skills/codex-memory/  # Read/write Skill
+~~~
+
+启用插件并重启 Codex Desktop 后，生命周期 Hook 会在每次用户消息提交时只读检索，在回合结束时请求维护；需要显式操作时使用 `$codex-memory`。MCP 显示“不支持身份验证”是本地 stdio 传输的正常状态，不代表插件不可用。
+
+After enabling the plugin and restarting Codex Desktop, lifecycle hooks search
+read-only on each user prompt and request curation at the end of a turn. Use
+`$codex-memory` for an explicit read or write workflow. “Authentication not
+supported” is normal for this local stdio transport and does not mean that the
+plugin is unavailable.
+
 ## 安装脚本参数 / Installer parameters
 
 脚本文件：scripts\install_windows.ps1。
@@ -571,6 +609,8 @@ config/                    # Manual MCP and hook examples
 scripts/                   # Windows install and uninstall scripts
 docs/                      # Architecture and lifecycle notes
 skills/codex-memory/       # Installable Codex skill
+.agents/plugins/           # Local Marketplace catalog
+plugins/codex-memory/      # Installable data-free Codex plugin package
 AGENTS.md                  # Repository memory curation policy
 ~~~
 

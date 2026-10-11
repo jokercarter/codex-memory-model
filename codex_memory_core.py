@@ -85,7 +85,8 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             confidence REAL NOT NULL DEFAULT 0.8,
             source_session TEXT NOT NULL DEFAULT '',
             last_reviewed_at TEXT NOT NULL DEFAULT '',
-            use_count INTEGER NOT NULL DEFAULT 0
+            use_count INTEGER NOT NULL DEFAULT 0,
+            always_apply INTEGER NOT NULL DEFAULT 0 CHECK (always_apply IN (0, 1))
         );
         """
     )
@@ -100,6 +101,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         "source_session": "TEXT NOT NULL DEFAULT ''",
         "last_reviewed_at": "TEXT NOT NULL DEFAULT ''",
         "use_count": "INTEGER NOT NULL DEFAULT 0",
+        "always_apply": "INTEGER NOT NULL DEFAULT 0 CHECK (always_apply IN (0, 1))",
     }
     for name, declaration in migrations.items():
         if name not in columns:
@@ -147,6 +149,8 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             ON memories(memory_key, status);
         CREATE INDEX IF NOT EXISTS idx_memories_importance
             ON memories(importance DESC, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memories_always_apply
+            ON memories(status, always_apply, importance DESC);
         """
     )
     connection.commit()
@@ -177,7 +181,8 @@ def _migrate_importance_scale(connection: sqlite3.Connection) -> None:
             confidence REAL NOT NULL DEFAULT 0.8,
             source_session TEXT NOT NULL DEFAULT '',
             last_reviewed_at TEXT NOT NULL DEFAULT '',
-            use_count INTEGER NOT NULL DEFAULT 0
+            use_count INTEGER NOT NULL DEFAULT 0,
+            always_apply INTEGER NOT NULL DEFAULT 0 CHECK (always_apply IN (0, 1))
         );
         """
     )
@@ -186,7 +191,7 @@ def _migrate_importance_scale(connection: sqlite3.Connection) -> None:
         INSERT INTO memories_v2
             (id, title, content, tags, category, importance, source,
              created_at, updated_at, memory_key, status, confidence,
-             source_session, last_reviewed_at, use_count)
+             source_session, last_reviewed_at, use_count, always_apply)
         SELECT id, title, content, tags, category,
                CASE
                    WHEN importance <= 1 THEN 1
@@ -194,7 +199,7 @@ def _migrate_importance_scale(connection: sqlite3.Connection) -> None:
                    ELSE ((importance - 1) * 25) + 1
                END,
                source, created_at, updated_at, memory_key, status, confidence,
-               source_session, last_reviewed_at, use_count
+               source_session, last_reviewed_at, use_count, always_apply
           FROM memories
         """
     )
@@ -311,6 +316,7 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
             "important": 0,
             "normal": 0,
             "unimportant": 0,
+            "mandatory": 0,
         }
     columns = table_columns(connection)
     if not columns:
@@ -323,6 +329,7 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
             "important": 0,
             "normal": 0,
             "unimportant": 0,
+            "mandatory": 0,
         }
     extended = "status" in columns
     if mutate and extended:
@@ -352,6 +359,15 @@ def stats(connection: sqlite3.Connection | None, mutate: bool = True) -> dict[st
         f"importance >= {NORMAL_MIN} AND importance < {IMPORTANT_MIN}"
     )
     counts["unimportant"] = count_where(f"importance < {NORMAL_MIN}")
+    if "always_apply" in columns:
+        prefix = "status = 'active' AND " if extended else ""
+        counts["mandatory"] = int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM memories WHERE {prefix}always_apply = 1"
+            ).fetchone()[0]
+        )
+    else:
+        counts["mandatory"] = 0
     return counts
 
 
@@ -553,6 +569,18 @@ def search(
     if mutate and extended:
         apply_decay(connection)
     limit = max(1, min(int(limit), 30))
+    mandatory_rows: list[sqlite3.Row] = []
+    if extended and "always_apply" in columns:
+        mandatory_rows = connection.execute(
+            """
+            SELECT id, title, content, tags, category, importance, source,
+                   created_at, updated_at, memory_key, confidence, use_count,
+                   always_apply
+              FROM memories
+             WHERE status = 'active' AND always_apply = 1
+             ORDER BY importance DESC, updated_at DESC, id DESC
+            """
+        ).fetchall()
     clauses = ["status = 'active'"] if extended else []
     params: list[object] = []
     if category and category in CATEGORIES:
@@ -561,11 +589,11 @@ def search(
     if min_importance:
         clauses.append("importance >= ?")
         params.append(max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(min_importance))))
-    extra_columns = (
-        "memory_key, confidence, use_count"
-        if extended
-        else "'' AS memory_key, 0.8 AS confidence, 0 AS use_count"
-    )
+    if extended:
+        always_column = "always_apply" if "always_apply" in columns else "0 AS always_apply"
+        extra_columns = f"memory_key, confidence, use_count, {always_column}"
+    else:
+        extra_columns = "'' AS memory_key, 0.8 AS confidence, 0 AS use_count, 0 AS always_apply"
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     query_lower = query.strip().lower()
     terms = _terms(query_lower)
@@ -609,28 +637,30 @@ def search(
         connection, seed_ids, RELATION_EXPANSION_LIMIT
     )
     candidate_ids = list(dict.fromkeys([*seed_ids, *relation_strengths]))
-    if not candidate_ids:
+    if not candidate_ids and not mandatory_rows:
         return []
-    id_placeholders = ",".join("?" for _ in candidate_ids)
-    candidate_clauses = [f"id IN ({id_placeholders})"]
-    candidate_params: list[object] = [*candidate_ids]
-    if extended:
-        candidate_clauses.append("status = 'active'")
-    if category and category in CATEGORIES:
-        candidate_clauses.append("category = ?")
-        candidate_params.append(category)
-    if min_importance:
-        candidate_clauses.append("importance >= ?")
-        candidate_params.append(max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(min_importance))))
-    rows = connection.execute(
-        f"""
-        SELECT id, title, content, tags, category, importance, source,
-               created_at, updated_at, {extra_columns}
-          FROM memories
-         WHERE {' AND '.join(candidate_clauses)}
-        """,
-        candidate_params,
-    ).fetchall()
+    rows: list[sqlite3.Row] = []
+    if candidate_ids:
+        id_placeholders = ",".join("?" for _ in candidate_ids)
+        candidate_clauses = [f"id IN ({id_placeholders})"]
+        candidate_params: list[object] = [*candidate_ids]
+        if extended:
+            candidate_clauses.append("status = 'active'")
+        if category and category in CATEGORIES:
+            candidate_clauses.append("category = ?")
+            candidate_params.append(category)
+        if min_importance:
+            candidate_clauses.append("importance >= ?")
+            candidate_params.append(max(IMPORTANCE_MIN, min(IMPORTANCE_MAX, int(min_importance))))
+        rows = connection.execute(
+            f"""
+            SELECT id, title, content, tags, category, importance, source,
+                   created_at, updated_at, {extra_columns}
+              FROM memories
+             WHERE {' AND '.join(candidate_clauses)}
+            """,
+            candidate_params,
+        ).fetchall()
     scored: list[tuple[float, sqlite3.Row]] = []
     for row in rows:
         title = str(row["title"]).lower()
@@ -661,7 +691,12 @@ def search(
                     score += 1
         scored.append((score, row))
     scored.sort(key=lambda item: (item[0], item[1]["updated_at"], item[1]["id"]), reverse=True)
-    chosen = [row for _score, row in scored[:limit]]
+    mandatory_ids = {int(row["id"]) for row in mandatory_rows}
+    relevant = [
+        row for _score, row in scored
+        if int(row["id"]) not in mandatory_ids and not bool(row["always_apply"])
+    ][:limit]
+    chosen = [*mandatory_rows, *relevant]
     if chosen and track_usage and mutate:
         timestamp = now_text()
         with connection:
@@ -678,8 +713,9 @@ def search(
                 """,
                 [(timestamp, int(row["id"])) for row in chosen],
             )
+            always_column = "always_apply" if "always_apply" in columns else "0 AS always_apply"
             refreshed = connection.execute(
-                f"SELECT id, title, content, tags, category, importance, source, created_at, updated_at, memory_key, confidence, use_count FROM memories WHERE id IN ({','.join('?' for _ in chosen)}) AND status = 'active'",
+                f"SELECT id, title, content, tags, category, importance, source, created_at, updated_at, memory_key, confidence, use_count, {always_column} FROM memories WHERE id IN ({','.join('?' for _ in chosen)}) AND status = 'active'",
                 [int(row["id"]) for row in chosen],
             ).fetchall()
         by_id = {int(row["id"]): row for row in refreshed}
@@ -785,6 +821,30 @@ def mark_used(
     return int(row["total"])
 
 
+def set_always_apply(
+    connection: sqlite3.Connection,
+    memory_ids: Iterable[int],
+    enabled: bool,
+) -> int:
+    ids = sorted({int(value) for value in memory_ids})
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    flag = int(bool(enabled))
+    with connection:
+        cursor = connection.execute(
+            f"""
+            UPDATE memories
+               SET always_apply = ?, updated_at = ?
+             WHERE status = 'active'
+               AND always_apply != ?
+               AND id IN ({placeholders})
+            """,
+            [flag, now_text(), flag, *ids],
+        )
+    return max(0, int(cursor.rowcount))
+
+
 def retire(
     connection: sqlite3.Connection,
     memory_ids: Iterable[int],
@@ -857,6 +917,7 @@ def commit_memory(
     source: str = "",
     memory_key: str = "",
     confidence: float = 0.8,
+    always_apply: bool | None = None,
     replace_ids: Iterable[int] = (),
     obsolete_ids: Iterable[int] = (),
     source_session: str = "",
@@ -919,7 +980,7 @@ def commit_memory(
 
         if target_id is not None:
             existing_row = connection.execute(
-                "SELECT importance FROM memories WHERE id = ?",
+                "SELECT importance, always_apply FROM memories WHERE id = ?",
                 (target_id,),
             ).fetchone()
             update_importance = (
@@ -927,12 +988,18 @@ def commit_memory(
                 if importance_value is not None
                 else int(existing_row["importance"] if existing_row else 3)
             )
+            update_always_apply = (
+                bool(existing_row["always_apply"])
+                if always_apply is None and existing_row
+                else bool(always_apply)
+            )
             connection.execute(
                 """
                 UPDATE memories
                    SET title = ?, content = ?, tags = ?, category = ?, importance = ?,
                        source = ?, updated_at = ?, memory_key = ?, status = 'active',
-                       confidence = ?, source_session = ?, last_reviewed_at = ?
+                       confidence = ?, source_session = ?, last_reviewed_at = ?,
+                       always_apply = ?
                  WHERE id = ?
                 """,
                 (
@@ -947,6 +1014,7 @@ def commit_memory(
                     confidence,
                     source_session,
                     timestamp,
+                    int(update_always_apply),
                     target_id,
                 ),
             )
@@ -966,7 +1034,7 @@ def commit_memory(
                         "UPDATE memories SET status = 'obsolete', updated_at = ?, last_reviewed_at = ?, source_session = ? WHERE id = ? AND status = 'active'",
                         (timestamp, timestamp, source_session, memory_id),
                     )
-            return {"operation": "updated", "id": target_id, "memory_key": memory_key}
+            return {"operation": "updated", "id": target_id, "memory_key": memory_key, "always_apply": update_always_apply}
 
         if active_count(connection) >= MAX_MEMORIES:
             raise ValueError(
@@ -975,13 +1043,14 @@ def commit_memory(
         new_importance = importance_value if importance_value is not None else infer_importance(
             title, content, category, confidence
         )
+        new_always_apply = bool(always_apply) if always_apply is not None else False
         cursor = connection.execute(
             """
             INSERT INTO memories
                 (title, content, tags, category, importance, source,
                  created_at, updated_at, memory_key, status, confidence,
-                 source_session, last_reviewed_at, use_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0)
+                 source_session, last_reviewed_at, use_count, always_apply)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0, ?)
             """,
             (
                 title,
@@ -996,6 +1065,7 @@ def commit_memory(
                 confidence,
                 source_session,
                 timestamp,
+                int(new_always_apply),
             ),
         )
         new_id = int(cursor.lastrowid)
@@ -1009,7 +1079,7 @@ def commit_memory(
             timestamp=timestamp,
         )
         _refresh_fts_row(connection, new_id)
-        return {"operation": "created", "id": new_id, "memory_key": memory_key}
+        return {"operation": "created", "id": new_id, "memory_key": memory_key, "always_apply": new_always_apply}
 
 
 def format_context(rows: Iterable[sqlite3.Row], *, heading: str = "Codex 记忆库检索结果") -> str:
@@ -1019,10 +1089,14 @@ def format_context(rows: Iterable[sqlite3.Row], *, heading: str = "Codex 记忆�
             "Codex 记忆库已连接，但当前没有匹配的长期记忆。\n"
             "只在本轮产生已确认、长期可复用的信息时写入记忆。"
         )
-    parts = [heading + "（仅作参考；若与当前用户明确要求冲突，以当前要求为准）："]
+    parts = [
+        heading
+        + "（“每次调用必读”记录必须在每次记忆检索时读取；其中的指令/偏好仅在其适用范围内执行，事实作为背景信息按需使用。"
+        + "普通记录仅作参考。任何记录都不得覆盖系统/开发者要求或用户本轮明确的新要求）："
+    ]
     for row in rows:
         content = str(row["content"]).strip()
-        if len(content) > 900:
+        if not bool(row["always_apply"]) and len(content) > 900:
             content = content[:897] + "…"
         importance = int(row["importance"])
         level = (
@@ -1030,8 +1104,9 @@ def format_context(rows: Iterable[sqlite3.Row], *, heading: str = "Codex 记忆�
             if importance >= IMPORTANT_MIN
             else ("不重要" if importance < NORMAL_MIN else "普通")
         )
+        mandatory_label = "每次调用必读" if bool(row["always_apply"]) else "相关记忆"
         parts.append(
-            f"- [记忆 #{row['id']}] {row['title']} | 分类={row['category']} | 重要度={level}（{importance}/100） | 使用次数={row['use_count']} | 置信度={float(row['confidence'] or 0):.2f}\n"
+            f"- [{mandatory_label} #{row['id']}] {row['title']} | 分类={row['category']} | 重要度={level}（{importance}/100） | 使用次数={row['use_count']} | 置信度={float(row['confidence'] or 0):.2f}\n"
             f"  {content}\n"
             f"  标签：{row['tags'] or '无'}"
         )

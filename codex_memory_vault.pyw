@@ -110,10 +110,10 @@ class MemoryDB:
         return self.connection.execute(
             f"""
             SELECT id, title, content, tags, category, importance, source,
-                   created_at, updated_at, use_count
+                   created_at, updated_at, use_count, always_apply
               FROM memories
               {where}
-             ORDER BY importance DESC, updated_at DESC, id DESC
+             ORDER BY always_apply DESC, importance DESC, updated_at DESC, id DESC
             """,
             params,
         ).fetchall()
@@ -126,14 +126,16 @@ class MemoryDB:
     def add(self, values: dict[str, object]) -> int:
         if self.count() >= MAX_MEMORIES:
             raise ValueError(f"记忆库已达到 {MAX_MEMORIES} 条上限")
+        always_apply = bool(values.get("always_apply", False))
         timestamp = now_text()
         memory_key = str(values.get("memory_key", values["title"])).strip()
         cursor = self.connection.execute(
             """
             INSERT INTO memories
                 (title, content, tags, category, importance, source, created_at, updated_at,
-                 memory_key, status, confidence, source_session, last_reviewed_at, use_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0)
+                 memory_key, status, confidence, source_session, last_reviewed_at, use_count,
+                 always_apply)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0, ?)
             """,
             (
                 values["title"],
@@ -148,18 +150,21 @@ class MemoryDB:
                 float(values.get("confidence", 0.8)),
                 str(values.get("source_session", "")),
                 timestamp,
+                int(always_apply),
             ),
         )
         self.connection.commit()
         return int(cursor.lastrowid)
 
     def update(self, memory_id: int, values: dict[str, object]) -> None:
+        always_apply = bool(values.get("always_apply", False))
         self.connection.execute(
             """
             UPDATE memories
                SET title = ?, content = ?, tags = ?, category = ?, importance = ?,
                    source = ?, updated_at = ?, memory_key = ?, status = 'active',
-                   confidence = ?, source_session = ?, last_reviewed_at = ?
+                   confidence = ?, source_session = ?, last_reviewed_at = ?,
+                   always_apply = ?
              WHERE id = ?
             """,
             (
@@ -174,6 +179,7 @@ class MemoryDB:
                 float(values.get("confidence", 0.8)),
                 str(values.get("source_session", "")),
                 now_text(),
+                int(always_apply),
                 memory_id,
             ),
         )
@@ -183,12 +189,19 @@ class MemoryDB:
         self.connection.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         self.connection.commit()
 
+    def mandatory_count(self) -> int:
+        return int(
+            self.connection.execute(
+                "SELECT COUNT(*) FROM memories WHERE status = 'active' AND always_apply = 1"
+            ).fetchone()[0]
+        )
+
     def export_json(self, path: Path) -> int:
         rows = self.connection.execute(
             """
             SELECT id, title, content, tags, category, importance, source,
                    created_at, updated_at, memory_key, confidence,
-                   source_session, last_reviewed_at
+                   source_session, last_reviewed_at, always_apply
               FROM memories
              WHERE status = 'active'
              ORDER BY importance DESC, updated_at DESC, id DESC
@@ -203,7 +216,7 @@ class MemoryDB:
             """
         ).fetchall()
         payload = {
-            "format": "codex-memory-v2",
+            "format": "codex-memory-v3",
             "exported_at": now_text(),
             "max_memories": MAX_MEMORIES,
             "memories": [dict(row) for row in rows],
@@ -268,12 +281,15 @@ class MemoryDB:
                     confidence = max(0.0, min(1.0, float(item.get("confidence", 0.8))))
                 except (TypeError, ValueError):
                     confidence = 0.8
+                requested_mandatory = bool(item.get("always_apply", False))
+                imported_mandatory = requested_mandatory
                 cursor = self.connection.execute(
                     """
                     INSERT INTO memories
                         (title, content, tags, category, importance, source, created_at, updated_at,
-                         memory_key, status, confidence, source_session, last_reviewed_at, use_count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0)
+                         memory_key, status, confidence, source_session, last_reviewed_at, use_count,
+                         always_apply)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 0, ?)
                     """,
                     (
                         title,
@@ -288,6 +304,7 @@ class MemoryDB:
                         confidence,
                         str(item.get("source_session", "")).strip(),
                         str(item.get("last_reviewed_at", timestamp)),
+                        int(imported_mandatory),
                     ),
                 )
                 new_id = int(cursor.lastrowid)
@@ -436,10 +453,10 @@ class MemoryApp:
 
         table_frame = ttk.Frame(left)
         table_frame.pack(fill="both", expand=True)
-        columns = ("id", "title", "category", "importance", "uses", "updated")
+        columns = ("id", "title", "category", "importance", "always", "uses", "updated")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="extended")
-        headings = {"id": "编号", "title": "标题", "category": "分类", "importance": "重要度", "uses": "使用次数", "updated": "更新时间"}
-        widths = {"id": 55, "title": 210, "category": 75, "importance": 110, "uses": 75, "updated": 145}
+        headings = {"id": "编号", "title": "标题", "category": "分类", "importance": "重要度", "always": "调用必读", "uses": "使用次数", "updated": "更新时间"}
+        widths = {"id": 48, "title": 185, "category": 70, "importance": 105, "always": 72, "uses": 70, "updated": 130}
         for column in columns:
             self.tree.heading(column, text=headings[column])
             self.tree.column(column, width=widths[column], anchor="center" if column != "title" else "w")
@@ -477,13 +494,19 @@ class MemoryApp:
         ttk.Combobox(form, textvariable=self.importance_var, values=IMPORTANCE_VALUES, state="readonly", width=8).grid(
             row=1, column=3, sticky="w", pady=(0, 7)
         )
-        ttk.Label(form, text="标签").grid(row=2, column=0, sticky="w", pady=(0, 7))
+        self.always_apply_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            form,
+            text="每次调用 Codex Memory 时必读（指令/偏好按范围执行，事实作背景）",
+            variable=self.always_apply_var,
+        ).grid(row=2, column=1, columnspan=3, sticky="w", pady=(0, 7))
+        ttk.Label(form, text="标签").grid(row=3, column=0, sticky="w", pady=(0, 7))
         self.tags_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.tags_var).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(0, 7))
-        ttk.Label(form, text="来源").grid(row=3, column=0, sticky="w", pady=(0, 7))
+        ttk.Entry(form, textvariable=self.tags_var).grid(row=3, column=1, columnspan=3, sticky="ew", pady=(0, 7))
+        ttk.Label(form, text="来源").grid(row=4, column=0, sticky="w", pady=(0, 7))
         self.source_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.source_var).grid(row=3, column=1, columnspan=3, sticky="ew", pady=(0, 7))
-        ttk.Label(form, text="整合后的内容 *").grid(row=4, column=0, sticky="nw", pady=(3, 5))
+        ttk.Entry(form, textvariable=self.source_var).grid(row=4, column=1, columnspan=3, sticky="ew", pady=(0, 7))
+        ttk.Label(form, text="整合后的内容 *").grid(row=5, column=0, sticky="nw", pady=(3, 5))
         self.content_text = tk.Text(
             form,
             height=16,
@@ -495,14 +518,14 @@ class MemoryApp:
             padx=8,
             pady=8,
         )
-        self.content_text.grid(row=4, column=1, columnspan=3, sticky="nsew", pady=(0, 7))
+        self.content_text.grid(row=5, column=1, columnspan=3, sticky="nsew", pady=(0, 7))
         content_scrollbar = ttk.Scrollbar(form, orient="vertical", command=self.content_text.yview)
-        content_scrollbar.grid(row=4, column=4, sticky="ns", pady=(0, 7))
+        content_scrollbar.grid(row=5, column=4, sticky="ns", pady=(0, 7))
         self.content_text.configure(yscrollcommand=content_scrollbar.set)
         form.columnconfigure(1, weight=1)
         form.columnconfigure(2, weight=1)
         form.columnconfigure(3, weight=1)
-        form.rowconfigure(4, weight=1)
+        form.rowconfigure(5, weight=1)
 
         editor_buttons = ttk.Frame(right)
         editor_buttons.pack(fill="x", pady=(8, 0))
@@ -537,7 +560,8 @@ class MemoryApp:
             SELECT
                 SUM(CASE WHEN importance >= 67 THEN 1 ELSE 0 END) AS important,
                 SUM(CASE WHEN importance >= 34 AND importance < 67 THEN 1 ELSE 0 END) AS normal,
-                SUM(CASE WHEN importance < 34 THEN 1 ELSE 0 END) AS unimportant
+                SUM(CASE WHEN importance < 34 THEN 1 ELSE 0 END) AS unimportant,
+                SUM(CASE WHEN always_apply = 1 THEN 1 ELSE 0 END) AS mandatory
               FROM memories
              WHERE status = 'active'
             """
@@ -545,7 +569,8 @@ class MemoryApp:
         self.count_label.configure(
             text=(
                 f"{total} / {MAX_MEMORIES} 条 · 重要 {int(tier_rows['important'] or 0)} · "
-                f"普通 {int(tier_rows['normal'] or 0)} · 不重要 {int(tier_rows['unimportant'] or 0)}"
+                f"普通 {int(tier_rows['normal'] or 0)} · 不重要 {int(tier_rows['unimportant'] or 0)} · "
+                f"每次调用必读 {int(tier_rows['mandatory'] or 0)}"
             )
         )
 
@@ -569,6 +594,7 @@ class MemoryApp:
                     title,
                     row["category"],
                     f"{importance_level(row['importance'])} · {row['importance']}/100",
+                    "是" if bool(row["always_apply"]) else "否",
                     row["use_count"],
                     row["updated_at"],
                 ),
@@ -609,6 +635,7 @@ class MemoryApp:
         self.title_var.set(row["title"])
         self.category_var.set(row["category"] if row["category"] in CATEGORIES else "其他")
         self.importance_var.set(str(row["importance"]))
+        self.always_apply_var.set(bool(row["always_apply"]))
         self.tags_var.set(row["tags"])
         self.source_var.set(row["source"])
         self.content_text.delete("1.0", "end")
@@ -622,6 +649,7 @@ class MemoryApp:
         self.title_var.set("")
         self.category_var.set("通用")
         self.importance_var.set("50")
+        self.always_apply_var.set(False)
         self.tags_var.set("")
         self.source_var.set("")
         self.content_text.delete("1.0", "end")
@@ -649,6 +677,7 @@ class MemoryApp:
             "category": category,
             "importance": importance,
             "source": self.source_var.get().strip(),
+            "always_apply": self.always_apply_var.get(),
         }
 
     def save_memory(self) -> None:
@@ -733,6 +762,7 @@ class MemoryApp:
             "category": category,
             "importance": max(int(row["importance"]) for row in rows),
             "source": "合并自：" + ", ".join(str(row["id"]) for row in rows),
+            "always_apply": all(bool(row["always_apply"]) for row in rows),
         }
         try:
             new_id = self.db.add(values)
