@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codex Memory"
+  short_description: "Read and write reusable Codex memories"
+  default_prompt: "Use $codex-memory to read relevant memories before work and maintain reusable memories after work."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,38 @@
+{
+  "name": "codex-memory",
+  "version": "1.0.0",
+  "description": "Local, data-free Codex memory plugin with read-only retrieval on every prompt and end-of-turn curation through MCP tools.",
+  "author": {
+    "name": "Local Codex Memory"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "memory",
+    "local",
+    "sqlite",
+    "mcp",
+    "lifecycle hooks",
+    "long-term memory"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Memory",
+    "shortDescription": "Use a local memory store in every Codex conversation",
+    "longDescription": "Codex Memory retrieves relevant local memories before work, keeps explicitly mandatory records in scope, and requests precise end-of-turn curation. The database, relations, exports, logs, and hook context remain local.",
+    "developerName": "Local Codex Memory",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Codex Memory on every turn: retrieve relevant local memories before answering and curate confirmed reusable information at the end of the turn.",
+      "When a task is blocked, search local Codex Memory for the concrete error, application, environment, and operation before asking for help.",
+      "Use $codex-memory when you want to explicitly read, write, replace, retire, or mark local memories."
+    ],
+    "brandColor": "#10A37F",
+    "screenshots": []
+  }
+}

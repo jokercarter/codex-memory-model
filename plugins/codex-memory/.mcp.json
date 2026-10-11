@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "codex-memory": {
+      "command": "cmd.exe",
+      "args": [
+        "/d",
+        "/c",
+        "scripts\\launch_codex_memory_mcp.cmd"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "PATH",
+        "LOCALAPPDATA",
+        "USERPROFILE",
+        "CODEX_HOME",
+        "CODEX_MEMORY_PYTHON"
+      ],
+      "tool_timeout_sec": 60
+    }
+  }
+}

@@ -6,7 +6,12 @@ description: Read, use, and curate the local Codex memory store through codex-me
 # Codex Memory
 
 Use the local `codex-memory` MCP server as the skill's storage backend. The
-current user request always overrides a stored memory.
+current user request always overrides a stored memory. Every search also
+returns active memories marked `always_apply`, regardless of query filters.
+Read those marked memories on every search: follow instructions and preferences
+when their stated scope applies, and use factual records as background when
+relevant. They do not override system/developer instructions or an explicit
+newer request from the user. Treat unmarked memories as reference context.
 
 This is a bidirectional skill, not a write-only helper. When it is invoked for a
 memory-related task, choose reading, writing, or both according to the task. Read
@@ -28,8 +33,11 @@ Preserve the read-before-change and end-of-turn write rules.
   merely because the initial attempt failed.
 - Search with a short query describing the current task. Use `category` or
   `min_importance` only when they improve relevance.
-- Treat returned memories as reference context. Search does not create, edit,
-  promote, decay, or retire records, and it must not control other applications.
+- Read every record marked `always_apply` on each search. Follow its
+  instructions/preferences only within their stated scope, and use factual
+  records as background when relevant. Treat unmarked records as reference
+  context. Search does not create, edit, promote, decay, or retire records, and
+  it must not control other applications.
 - If a retrieved memory appears applicable, use it as a candidate procedure and
   verify the result in the current task. If it is wrong or superseded, follow
   the replacement and retirement rules instead of treating the old memory as
@@ -42,6 +50,14 @@ Preserve the read-before-change and end-of-turn write rules.
 If the response actually relies on specific returned memories, call
 `codex_memory_mark_used` with those memory IDs during the end-of-turn
 maintenance step. Do not mark every search result as used.
+
+The user has specifically asked for memories about Codex operations and related
+skill workflows, personal profile information, learning/coursework, and resume
+or job applications to be marked `always_apply`. When adding or refining a
+memory in one of those areas, preserve that retrieval scope. These records are
+always read, but factual content is used only when relevant and scoped
+instructions are followed only in the matching task. Do not make login secrets
+or credentials always-apply by inference.
 
 ## Curate and write
 
@@ -68,7 +84,12 @@ the applicable scenario, prerequisites or trigger, version or scope, and any
 important conditions or steps when they affect how the fact should be used.
 Use the content itself for essential context; tags and source can supplement it
 but should not be the only place where the usage scenario is recorded. Do not
-copy the conversation verbatim.
+copy the conversation verbatim. Set `always_apply=true` for stable instructions
+or facts the user explicitly wants present in every memory search. Every active
+record with this setting is returned regardless of query filters. Omit this
+field when refining an existing memory to preserve its current setting. Do not
+promote ordinary facts or task-specific procedures into this class merely
+because they are important.
 
 Memories can have learned relations with strength from 1 to 100. Deliberately
 using memories together increases their relation strength. Search starts with
@@ -78,6 +99,9 @@ use codex_memory_related when you need to inspect a memory's neighbors.
 Before changing a fact or procedure, search for the existing record. Use the
 same `memory_key` and `replace_ids` when the new version supersedes it. Use
 `codex_memory_retire` for wrong, duplicate, stale, or unsafe records.
+When the user asks to change whether existing memories are included on every
+search, use `codex_memory_set_always_apply` with the verified record IDs. Use
+`codex_memory_commit(always_apply=...)` when creating or refining a memory.
 
 The user has explicitly authorized broad retention, including sensitive
 information. Do not reject a user-requested fact merely because it contains
