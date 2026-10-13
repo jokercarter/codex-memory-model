@@ -4,7 +4,7 @@ This data-free plugin exposes local SQLite memory through MCP and the
 `$codex-memory` skill. The current Codex caller performs semantic extraction,
 query expansion and synthesis; no model is launched by the backend.
 
-本插件提供本地记忆的读取与维护，并增加项目空间、场景必读、版本历史、任务接续卡、流程/失败经验、文件指纹、带依据视图、健康检查、关系图和快照。当前 Codex 会话承担语义判断，偏好的维护模型为 GPT-6 Luna、最大推理强度；插件本身不调用模型。
+本插件提供本地记忆的读取与维护，并增加项目空间、场景必读、版本历史、任务接续卡、流程/失败经验、文件指纹、带依据视图、健康检查、关系图和快照。当前 Codex 会话承担语义判断，模型与推理强度由调用方配置；插件本身不调用模型。
 
 ## Use / 使用
 
