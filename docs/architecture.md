@@ -15,10 +15,10 @@ Local dashboard --------> same core/features APIs (loopback only)
 Optional lifecycle hooks -> existing integration, independently verified
 ```
 
-The current caller supplies semantic decisions. No component launches a model,
-downloads weights, opens unrelated apps or uploads local data. GPT-6 Luna with maximum reasoning
-is a preferred caller setting. Hook execution is not required for explicit
-MCP calls, and a healthy MCP server is not evidence of successful hooks.
+The caller supplies semantic decisions and selects its model through its own
+configuration. No component launches a model, downloads weights, opens unrelated
+apps or uploads local data. Hook execution is not required for explicit MCP
+calls, and a healthy MCP server is not evidence of successful hooks.
 
 当前会话承担语义工作；后端执行索引、事务、预算、版本与确定性计算。可显式调用 MCP 和 Skill；Hook 运行需要单独验证。
 
