@@ -41,7 +41,7 @@ def session_start(event: dict[str, Any]) -> None:
         current = stats(connection, mutate=False)
         context = (
             "Codex 本地长期记忆层已连接。每次处理用户请求前，优先使用与当前任务相关的记忆；"
-            "若当前请求明确改变了旧信息，以当前请求为准。每个助手回复完成后，及时保存已确认、对未来任务有一定帮助的信息，"
+            "若当前请求明确改变了旧信息，以当前请求为准。每轮结束时保存已确认、对未来任务有一定帮助的信息，"
             "包括个人信息和偏好，也包括一般事实、项目背景、技术环境、经过验证的解决方法、操作规范、稳定决策和通用知识；"
             "新增记录要在内容中保留适用场景、前提或触发条件、版本或范围等必要上下文，"
             "由 Codex 判断初始重要度（1–33 不重要，34–66 普通，67–100 重要）；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时不用则乘以 0.9。"
@@ -75,7 +75,6 @@ def prompt(event: dict[str, Any]) -> None:
         context += (
             "\n\n记忆维护规则：保存已确认、对未来任务有一定帮助的信息，包括个人信息和偏好，也包括一般事实、项目背景、技术环境、经过验证的解决方法、操作规范、稳定决策和通用知识；"
             "内容长度不设固定上限，优先保证精确、完整，并写清适用场景、前提和适用条件。"
-            "在任务进行中一旦确认关键事实、个人偏好、成功验证的可复用 pipeline 或解决流程，应立即调用记忆写入工具，不要等到整个会话结束。"
             "例如 LaTeX 编译与 PDF 转换、Chrome 控制与读取、Gradescope 批改作业等正确流程可以保存。"
             "用户已明确要求广泛保存记忆；不要因为电话号码、密码、令牌、敏感凭据或其他敏感内容而自动排除信息。"
             "仍按原子信息整理，不逐字复制完整聊天或文档；未经验证的内容标注为待确认。"
@@ -93,10 +92,8 @@ def prompt(event: dict[str, Any]) -> None:
 
 
 def stop(event: dict[str, Any]) -> None:
-    # Stop runs after each assistant turn. It asks Codex to commit durable facts
-    # discovered during that turn before the response is allowed to finish.
-    # The second Stop is marked active by Codex and is allowed to finish without
-    # recursion.
+    # The first Stop hook asks Codex for one internal curation pass. The second
+    # Stop is marked active by Codex and is allowed to finish without recursion.
     if bool(event.get("stop_hook_active")):
         return
     assistant = str(event.get("last_assistant_message") or "").strip()
@@ -107,9 +104,8 @@ def stop(event: dict[str, Any]) -> None:
             {
                 "decision": "block",
                 "reason": (
-                    "请先完成当前助手回复对应的 Codex 记忆维护，再结束这一轮，并实际调用记忆工具。"
-                    "回顾当前回复及其对应任务中已经确认的个人信息、偏好、一般事实、项目背景、技术环境、解决方法和操作规范，"
-                    "如果已经确认关键事实、成功验证的可复用 pipeline、稳定决策或个人使用偏好，应在当前运行中立即写入；不要等到整个会话结束。"
+                    "请完成本轮 Codex 记忆维护后再结束，并实际调用记忆工具。"
+                    "先回顾本轮涉及的个人信息、偏好、一般事实、项目背景、技术环境、解决方法和操作规范，"
                     "把符合范围的内容整理成未来可复用的精确摘要；不要逐字复制用户或助手的原话，不要保存整段对话。"
                     "内容长度不设固定上限，按需要写清事实、适用场景、前提或触发条件、版本或范围和可执行约束，并合并同一主题的重复信息。"
                     "先调用 codex_memory_search 查找相关旧记录；新事实覆盖旧事实时用 codex_memory_commit 的 replace_ids 更新，"
@@ -125,9 +121,8 @@ def stop(event: dict[str, Any]) -> None:
 
 
 def session_end(event: dict[str, Any]) -> None:
-    # Retrieval hooks remain read-only. Durable writes happen during each
-    # assistant turn through the Stop prompt and explicit MCP write tools;
-    # session end is only a final review point.
+    # Retrieval hooks are intentionally side-effect free. Post-turn memory
+    # maintenance happens only through the explicit MCP write tools.
     return
 
 

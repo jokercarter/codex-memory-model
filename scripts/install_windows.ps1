@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$ConfigureCodex,
+    [switch]$ConfigureHooks,
+    [string]$PythonExecutable = "",
     [string]$InstallDirectory = ""
 )
 
@@ -13,6 +15,17 @@ if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
 $InstallDirectory = [System.IO.Path]::GetFullPath($InstallDirectory)
 
 function Get-PythonSpec {
+    if (-not [string]::IsNullOrWhiteSpace($PythonExecutable)) {
+        if (-not (Test-Path -LiteralPath $PythonExecutable -PathType Leaf)) { throw "Python executable not found: $PythonExecutable" }
+        return [pscustomobject]@{ Executable = [System.IO.Path]::GetFullPath($PythonExecutable); PrefixArgs = @() }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_MEMORY_PYTHON) -and (Test-Path -LiteralPath $env:CODEX_MEMORY_PYTHON -PathType Leaf)) {
+        return [pscustomobject]@{ Executable = $env:CODEX_MEMORY_PYTHON; PrefixArgs = @() }
+    }
+    $bundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+    if (Test-Path -LiteralPath $bundledPython -PathType Leaf) {
+        return [pscustomobject]@{ Executable = $bundledPython; PrefixArgs = @() }
+    }
     $python = Get-Command python.exe -ErrorAction SilentlyContinue
     if ($null -ne $python) {
         return [pscustomobject]@{
@@ -31,7 +44,7 @@ function Get-PythonSpec {
 }
 
 function Quote-TomlLiteral([string]$value) {
-    return "'" + ($value -replace "'", "''") + "'"
+    return ($value | ConvertTo-Json -Compress)
 }
 
 function Add-PropertyIfMissing($object, [string]$name, $value) {
@@ -119,12 +132,24 @@ $skillInstallDirectory = Join-Path $codexHome "skills\codex-memory"
 New-Item -ItemType Directory -Force -Path (Join-Path $skillInstallDirectory "agents") | Out-Null
 $filesToInstall = @(
     "codex_memory_core.py",
+    "codex_memory_features.py",
+    "codex_memory_dashboard.py",
     "codex_memory_mcp.py",
     "codex_memory_hook.py",
     "codex_memory_vault.pyw"
 )
 foreach ($file in $filesToInstall) {
+    if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $file) -PathType Leaf)) { throw "Incomplete package: $file" }
+}
+foreach ($file in $filesToInstall) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $file) -Destination (Join-Path $InstallDirectory $file) -Force
+}
+$installedConfig = Join-Path $InstallDirectory 'config'
+New-Item -ItemType Directory -Force -Path $installedConfig | Out-Null
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'config\memory-settings.json.example') -Destination (Join-Path $installedConfig 'memory-settings.json.example') -Force
+$dashboardLauncher = Join-Path $sourceRoot '启动 Codex 记忆面板.bat'
+if (Test-Path -LiteralPath $dashboardLauncher -PathType Leaf) {
+    Copy-Item -LiteralPath $dashboardLauncher -Destination $InstallDirectory -Force
 }
 Copy-Item -LiteralPath (Join-Path $sourceRoot "skills\codex-memory\SKILL.md") -Destination (Join-Path $skillInstallDirectory "SKILL.md") -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot "skills\codex-memory\agents\openai.yaml") -Destination (Join-Path $skillInstallDirectory "agents\openai.yaml") -Force
@@ -133,8 +158,8 @@ Write-Host "Installed Codex memory files to $InstallDirectory"
 Write-Host "Installed Codex skill to $skillInstallDirectory"
 Write-Host "Database remains local at $([Environment]::GetFolderPath('LocalApplicationData'))\CodexMemoryVault\memory.db"
 
-if (-not $ConfigureCodex) {
-    Write-Host "Codex configuration was not changed. Re-run with -ConfigureCodex to add MCP and hooks."
+if (-not $ConfigureCodex -and -not $ConfigureHooks) {
+    Write-Host "Use -ConfigureCodex for MCP; add -ConfigureHooks only when you explicitly want lifecycle hook configuration."
     exit 0
 }
 
@@ -142,6 +167,7 @@ New-Item -ItemType Directory -Force -Path $codexHome | Out-Null
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $hookPath = Join-Path $InstallDirectory "codex_memory_hook.py"
 
+if ($ConfigureHooks) {
 $hooksPath = Join-Path $codexHome "hooks.json"
 $hooksConfig = [pscustomobject]@{
     description = "Codex local long-term memory layer"
@@ -166,6 +192,12 @@ Set-HookEvent $hooksConfig "UserPromptSubmit" $pythonCommand $hookPath "prompt" 
 Set-HookEvent $hooksConfig "Stop" $pythonCommand $hookPath "stop" "Curate current Codex turn"
 $hooksConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $hooksPath -Encoding UTF8
 Write-Host "Updated hooks: $hooksPath"
+}
+
+if (-not $ConfigureCodex) {
+    Write-Host "Runtime installed. Requested hook configuration is complete."
+    exit 0
+}
 
 $configPath = Join-Path $codexHome "config.toml"
 $tomlArguments = @($python.PrefixArgs) + @((Join-Path $InstallDirectory "codex_memory_mcp.py"))
@@ -200,4 +232,4 @@ if ($existingToml -match $markerPattern) {
     Write-Host "Added the Codex memory MCP block to $configPath"
 }
 
-Write-Host "Restart Codex Desktop completely so it reloads the MCP server and hooks."
+Write-Host "Restart Codex Desktop completely so it reloads the MCP server. Hook runtime success must be checked separately in a real conversation."

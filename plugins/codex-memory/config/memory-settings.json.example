@@ -1,0 +1,13 @@
+{
+  "max_memories": 1000,
+  "decay_interval_hours": 6,
+  "activity_decay_factor": 0.9,
+  "activity_boost_factor": 1.5,
+  "activity_boost_min": 20,
+  "context_token_budget": 4000,
+  "relation_seed_limit": 12,
+  "relation_expansion_limit": 32,
+  "relation_min_strength": 30,
+  "relation_half_life_days": 30,
+  "default_task_ttl_hours": 168
+}

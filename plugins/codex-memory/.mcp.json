@@ -13,7 +13,9 @@
         "LOCALAPPDATA",
         "USERPROFILE",
         "CODEX_HOME",
-        "CODEX_MEMORY_PYTHON"
+        "CODEX_MEMORY_PYTHON",
+        "CODEX_MEMORY_DB",
+        "CODEX_MEMORY_SETTINGS"
       ],
       "tool_timeout_sec": 60
     }
