@@ -1,29 +1,39 @@
-# Codex Memory plugin（本机版）
+# Codex Memory v2 plugin / 插件
 
-这个插件把本地 Codex 记忆模型接入 Codex Desktop：
+This data-free plugin exposes local SQLite memory through MCP and the
+`$codex-memory` skill. The current Codex caller performs semantic extraction,
+query expansion and synthesis; no model is launched by the backend.
 
-- `UserPromptSubmit` 每次提交用户消息时只读检索相关记忆；
-- `SessionStart`、恢复、清空或压缩会话时加载高重要度和“每次调用必读”记忆；
-- `Stop` 在每个助手回合结束前要求立即维护本回合已确认的重要信息；会话结束时再补充检查，实际写入由 MCP 工具完成；
-- MCP 服务器通过标准输入输出运行，不监听端口，也不需要 API key；
-- 数据库、关系、导出文件、日志和 Hook 上下文继续保留在本机 `%LOCALAPPDATA%\CodexMemoryVault`。
+本插件提供本地记忆的读取与维护，并增加项目空间、场景必读、版本历史、任务接续卡、流程/失败经验、文件指纹、带依据视图、健康检查、关系图和快照。当前 Codex 会话承担语义判断，偏好的维护模型为 GPT-6 Luna、最大推理强度；插件本身不调用模型。
 
-插件包本身只包含无数据的代码、Skill、配置模板和启动器，不包含任何本地记忆内容。
+## Use / 使用
 
-## 显式调用
+Invoke `$codex-memory` in a conversation, for example:
 
-在对话中可以使用 `$codex-memory`，例如：
+- “读取 project-demo 空间的相关记忆，场景是 document，再继续工作。”
+- “读取当前错误对应的已验证流程，检查前提和成功标准。”
+- “保存这项确认信息；先找旧记录，使用版本检查更新，并保留来源。”
+- “从任务接续卡恢复进度，结束时关闭已完成任务。”
 
-- `使用 $codex-memory，先检索与当前错误和环境有关的记忆，再开始排查。`
-- `使用 $codex-memory，读取与 LaTeX 编译相关的已验证流程。`
-- `使用 $codex-memory，把下面这条已确认的信息按一个信息点写入本地记忆，并先检查是否和旧记录矛盾：……`
+MCP works through stdio and does not require API credentials. Reads are
+read-only; local memory, provenance, task cards, snapshots, logs and exports
+must never be included in the plugin package or uploaded to GitHub.
 
-正常情况下不必每条消息手动输入前缀：插件启用后，生命周期 Hook 会在每个对话回合自动读取，并在回合结束前要求立即保存已确认的重要信息。
+Explicit MCP/Skill use is independent of lifecycle hooks. Existing hook support
+is retained; successful installation does not establish actual desktop hook
+success. 用户可以直接使用 Skill/MCP；Hook 的真实运行状态必须另行核实。
 
-## 本地启动器
+## Packaging / 打包
 
-- `scripts\launch_codex_memory_mcp.cmd`：启动 MCP；
-- `scripts\launch_codex_memory_hook.cmd <session-start|prompt|stop>`：运行生命周期 Hook；
-- `scripts\open_memory_vault.cmd`：打开 Tkinter 记忆管理器。
+Repository-root modules are canonical. Run `python scripts/sync_runtime.py`
+from the repository to package runtime, skill and settings template; use
+`--check` to detect drift. See the root README for bilingual setup, parameters,
+MCP tool reference, capacity rules, migration and recovery instructions.
 
-启动器优先使用 `CODEX_MEMORY_PYTHON`，其次使用 Codex 随附的 Python，再回退到 PATH 中的 `python.exe` 或 `py.exe -3`。
+默认1000条仅计算有效长期记忆；历史、任务卡和派生视图独立存储。配置模板为
+`config/memory-settings.json.example`，实际设置放数据库旁的 `settings.json`
+或由 `CODEX_MEMORY_SETTINGS` 指定。不要把实际配置里的本机数据提交到仓库。
+
+Launchers in `scripts/` use `CODEX_MEMORY_PYTHON`, bundled Python, or a PATH
+Python fallback. `open_memory_vault.cmd` opens the legacy Tkinter manager;
+new dashboard availability and launch options are documented in the root README.

@@ -1,639 +1,191 @@
-# Codex Memory Model
+# Codex Memory Model v2
 
-本项目是一个只依赖 Python 标准库的本地 Codex 长期记忆层。它把消息中经过确认、整合并且对未来任务有一定帮助的信息保存为原子记忆；这些信息不局限于个人信息或偏好，也可以是一般事实、项目背景、技术环境、已验证的解决方法和操作规范。系统通过 SQLite、MCP 和 Codex lifecycle hooks 连接到 Codex Desktop。记忆库只保存在本机，不会自动上传数据库，也不会启动或控制其他应用。
+Codex Memory 是只依赖 Python 标准库的本地记忆系统：SQLite 保存原子事实、版本和来源；MCP 让 Codex 按场景读取、维护记忆、接续项目和复用流程。它也提供本地健康面板、关系图、快照与撤销。
 
-This project is a lightweight local long-term memory layer for Codex. It stores confirmed information that may help a future task as atomic memories; the scope is broader than personal facts and preferences and can include general facts, project background, technical context, verified solution procedures, and operational playbooks. It connects to Codex Desktop through SQLite, MCP, and Codex lifecycle hooks. The database stays local: the project has no telemetry, automatic upload, or control of other apps.
+Codex Memory is a local memory system built with the Python standard library. SQLite stores atomic facts, revisions and provenance; MCP lets Codex retrieve scoped context, maintain memories, resume projects and reuse verified procedures. A local health dashboard, relationship graph and recovery snapshots make the store inspectable.
 
-本项目不单独下载或运行语言模型。信息提取、重要度判断以及回合中的及时写入和会话结束复核由当前 Codex 会话调用记忆工具完成；桌面版使用不要求安装 Codex CLI。
+**模型说明 / Model behavior:** 语义提取、同义表达扩展、矛盾判断和综合分析由调用方配置的 Codex 模型完成。本地后端负责存储和确定性规则，不会自行调用模型；无需本地模型、向量数据库或额外 API key. The Codex model configured by the caller performs semantic work. The local backend handles storage and deterministic rules; it does not invoke a model or require a local model, vector database or additional API key.
 
-The project does not download or run a separate language model. The active Codex session performs extraction, importance judgment, in-run writes, and a session-end completeness review through the memory tools. Codex Desktop can use it without the Codex CLI.
+## 快速开始 / Quick start
 
-## 先看这里：最快的使用方式 / Fastest path
+需要 Windows、Python 3.10+ 和支持 MCP 的 Codex Desktop；使用 MCP 不要求安装 Codex CLI。无需 pip 安装。Requirements: Windows, Python 3.10+, and Codex Desktop with MCP; no CLI or third-party packages are required.
 
-| 需求 Need | 操作 Action |
-| --- | --- |
-| 普通安装并自动接入 Codex | 运行安装脚本并加 **-ConfigureCodex** |
-| 只安装文件，稍后手动配置 | 运行安装脚本但不加 **-ConfigureCodex** |
-| 修改源文件安装位置 | 使用 **-InstallDirectory "D:\Tools\codex_memory"** |
-| 打开本地记忆管理器 | 双击 **启动 Codex 记忆库.bat** |
-| 备份记忆 | 在管理器中点击“导出 JSON” |
-| 以后更新 GitHub | 从专用分支提交并通过 Pull Request，不能直接推送默认分支 |
-
-| Need | Action |
-| --- | --- |
-| Normal installation with automatic Codex integration | Run the installer with **-ConfigureCodex** |
-| Install files and configure Codex later | Run the installer without **-ConfigureCodex** |
-| Choose another source directory | Use **-InstallDirectory "D:\Tools\codex_memory"** |
-| Open the local memory manager | Double-click **启动 Codex 记忆库.bat** |
-| Back up memories | Click “导出 JSON” in the manager |
-| Update GitHub in the future | Use a dedicated branch and Pull Request; never push directly to the default branch |
-
-## 功能概览 / Features
-
-- **自动读取 / Automatic retrieval**：SessionStart 会读取高重要度记忆；UserPromptSubmit 会按当前任务检索相关记忆。任务遇到阻塞、准备向用户求助前，Codex 还会针对症状、错误、应用和环境再次检索。所有检索都是只读的。
-- **回合内及时维护 / In-run curation**：Stop hook 在每个助手回合结束前提醒 Codex 立即保存已确认、可复用且带有必要使用语境的信息；会话结束时再补充检查，不会因为每条消息都自动创建一条记录。
-- **双向 Skill / Bidirectional skill**：codex-memory Skill 同时支持在工作前读取相关记忆，以及在工作结束后按规则标记使用、写入、替换和淘汰记忆；它不是只负责写入的工具。
-- **原子记忆 / Atomic records**：一条记录表达一个信息点；新事实可以用 replace_ids 覆盖旧事实，错误、重复或失效记录可以淘汰。
-- **重要度生命周期 / Importance lifecycle**：初始重要度由 Codex 在 1–100 中判断；每次实际使用至少增加 20 点并乘以 1.5，连续 6 小时没有检索时乘以 0.9。
-- **记忆关系 / Memory relations**：记忆之间保存 1–100 的相关度；共同使用会提高相关度，检索先取少量全文索引种子，再沿高相关度边扩展，减少无关搜索。
-- **本地管理 / Local manager**：Tkinter 管理器支持搜索、分类、重要度筛选、编辑、合并、删除、JSON 导入和 JSON 导出。
-- **轻量部署 / Lightweight deployment**：只使用 Python 标准库，不需要 pip install，MCP 通过标准输入输出运行，不监听网络端口。
-
-The codex-memory skill supports both read and write workflows: it retrieves
-relevant memories before work and can mark, create, replace, or retire memories
-during the run and in the session-end review. It is not a write-only tool.
-
-## 系统要求 / Requirements
-
-### Windows / Windows
-
-- Windows 10/11 或兼容的 Windows 环境。
-- Python 3.10 或更高版本；项目不需要第三方 Python 包。
-- 已安装并能运行 Codex Desktop。
-- 如果使用自动配置，需要 Codex Desktop 支持 MCP 和 lifecycle hooks。
-- Git 只在从 GitHub 克隆或推送更新时需要；下载 ZIP 后可以不安装 Git。
-
-### Windows (English)
-
-- Windows 10/11 or a compatible Windows environment.
-- Python 3.10 or newer; no third-party Python packages are required.
-- A working Codex Desktop installation.
-- MCP and lifecycle hook support in Codex Desktop for automatic configuration.
-- Git is needed only to clone or publish updates; it is optional when using a ZIP download.
-
-检查 Python：
-
-~~~powershell
-python --version
-py -3 --version
-~~~
-
-The installer first looks for python.exe. If it is unavailable, it uses py.exe -3. The installer does not replace or install Python for you.
-
-## 5 分钟安装（推荐）/ Five-minute installation (recommended)
-
-### 1. 获取仓库 / Get the repository
-
-~~~powershell
+```powershell
 git clone https://github.com/jokercarter/codex-memory-model.git
 Set-Location .\codex-memory-model
-~~~
-
-也可以从 GitHub 下载 ZIP，解压后在解压目录运行下面的命令。
-
-You can also download a ZIP archive from GitHub and run the commands from the extracted directory.
-
-### 2. 安装并自动配置 / Install and configure
-
-~~~powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install_windows.ps1 -ConfigureCodex
-~~~
+```
 
-脚本会：
+完全退出并重新打开 Codex，然后在聊天中输入：
 
-1. 把运行文件复制到 %USERPROFILE%\.codex\codex_memory；
-2. 把可调用的 Skill 复制到 %USERPROFILE%\.codex\skills\codex-memory；
-3. 合并或创建 %USERPROFILE%\.codex\hooks.json；
-4. 在 %USERPROFILE%\.codex\config.toml 中添加带标记的 codex_memory MCP 配置；
-5. 修改已有配置前创建带时间戳的 .bak-codex-memory-... 备份；
-6. 保留数据库原位，不复制、不上传、不覆盖用户已有记忆。
+> 使用 $codex-memory，读取与当前任务相关的记忆；确认有长期价值的信息后再维护记忆。
 
-The installer copies runtime files to %USERPROFILE%\.codex\codex_memory, installs the Codex skill, merges hooks, adds a marked MCP block, creates timestamped backups before configuration changes, and leaves the local database untouched.
+Restart Codex completely, then say: “Use $codex-memory to retrieve relevant context and curate confirmed reusable information.” Explicit MCP/Skill use works independently of lifecycle hooks. Installation and server startup do not prove that desktop hooks executed successfully.
 
-### 3. 完全重启 Codex / Fully restart Codex
+安装器选项 / Installer options:
 
-完全退出 Codex Desktop 后重新打开，让 app-server 重新加载 MCP 和 hooks。第一次使用非托管 Hook 时，在 Codex 的 /hooks 页面检查并信任显示的命令。
-
-Fully quit and reopen Codex Desktop so its app-server reloads MCP and hooks. When Codex asks you to review non-managed hooks, inspect and trust the commands shown on the /hooks page.
-
-### 4. 打开管理器 / Open the manager
-
-在仓库目录双击：
-
-~~~text
-启动 Codex 记忆库.bat
-~~~
-
-或者运行：
-
-~~~powershell
-pythonw .\codex_memory_vault.pyw
-~~~
-
-管理器会自动创建数据库目录和 SQLite 文件。默认位置为：
-
-~~~text
-%LOCALAPPDATA%\CodexMemoryVault\memory.db
-~~~
-
-如果 LOCALAPPDATA 不存在，代码回退到：
-
-~~~text
-%USERPROFILE%\.codex_memory_vault\memory.db
-~~~
-
-The manager creates the database directory and SQLite file on first launch. The default location is %LOCALAPPDATA%\CodexMemoryVault\memory.db; if LOCALAPPDATA is unavailable, it falls back to %USERPROFILE%\.codex_memory_vault\memory.db.
-
-### 快速验证 / Quick verification
-
-安装后可以先确认文件和配置是否存在：
-
-~~~powershell
-$runtime = Join-Path $env:USERPROFILE ".codex\codex_memory"
-$skill = Join-Path $env:USERPROFILE ".codex\skills\codex-memory"
-Test-Path (Join-Path $runtime "codex_memory_mcp.py")
-Test-Path (Join-Path $runtime "codex_memory_hook.py")
-Test-Path (Join-Path $skill "SKILL.md")
-Select-String -Path (Join-Path $env:USERPROFILE ".codex\config.toml") -Pattern "codex_memory"
-Select-String -Path (Join-Path $env:USERPROFILE ".codex\hooks.json") -Pattern "codex_memory_hook.py"
-~~~
-
-每个 Test-Path 应返回 True；Select-String 应显示 MCP 和 Hook 配置行。
-
-Each Test-Path should return True, and Select-String should show the MCP and
-hook configuration lines.
-
-## 作为 Codex 插件安装 / Install as a Codex plugin
-
-仓库同时提供一个可从本地 Marketplace 安装的插件包。插件包只包含代码、Skill、启动器和配置模板；本地 SQLite 数据库、关系、导出文件、日志和 Hook 上下文仍保存在电脑上。插件通过相对路径启动 MCP，不要求 API key，也不会把记忆上传到 GitHub。
-
-The repository also contains a local Marketplace plugin package. The package
-contains only code, the Skill, launchers, and configuration templates. The
-SQLite store, relations, exports, logs, and hook context remain on the local
-machine. The plugin starts MCP through a relative launcher, needs no API key,
-and does not upload memories to GitHub.
-
-### 本地 Marketplace / Local Marketplace
-
-在 Codex Desktop 的插件设置中添加仓库内的 `.agents/plugins/marketplace.json`，然后启用 `codex-memory`。如果当前版本没有图形化的本地 Marketplace 选择器，可以把 `plugins/codex-memory` 作为插件目录提供给 Codex，或继续使用上面的安装脚本和手动 MCP 配置。
-
-Add `.agents/plugins/marketplace.json` from this repository in Codex Desktop's
-plugin settings, then enable `codex-memory`. If the installed Codex version
-does not expose a local Marketplace picker, use `plugins/codex-memory` as the
-plugin directory, or use the installer and manual MCP configuration above.
-
-插件目录中的关键文件：
-
-~~~text
-.agents/plugins/marketplace.json          # Marketplace entry
-plugins/codex-memory/.codex-plugin/       # Plugin manifest
-plugins/codex-memory/.mcp.json            # Relative stdio MCP configuration
-plugins/codex-memory/runtime/             # Data-free Python runtime
-plugins/codex-memory/scripts/             # Windows launchers
-plugins/codex-memory/skills/codex-memory/  # Read/write Skill
-~~~
-
-启用插件并重启 Codex Desktop 后，生命周期 Hook 会在每次用户消息提交时只读检索，在回合结束时请求维护；需要显式操作时使用 `$codex-memory`。MCP 显示“不支持身份验证”是本地 stdio 传输的正常状态，不代表插件不可用。
-
-After enabling the plugin and restarting Codex Desktop, lifecycle hooks search
-read-only on each user prompt and request curation at the end of a turn. Use
-`$codex-memory` for an explicit read or write workflow. “Authentication not
-supported” is normal for this local stdio transport and does not mean that the
-plugin is unavailable.
-
-## 安装脚本参数 / Installer parameters
-
-脚本文件：scripts\install_windows.ps1。
-
-The installer is scripts\install_windows.ps1.
-
-| 参数 Parameter | 默认值 Default | 作用 |
-| --- | --- | --- |
-| -ConfigureCodex | 关闭 off | 同时写入 MCP 和 hooks 配置；不加时只复制文件 |
-| -InstallDirectory <path> | %USERPROFILE%\.codex\codex_memory | 修改运行文件的安装目录；路径会被解析为绝对路径 |
-
-| Parameter | Default | Effect |
-| --- | --- | --- |
-| -ConfigureCodex | Off | Also writes MCP and hook configuration; without it, only files are copied |
-| -InstallDirectory <path> | %USERPROFILE%\.codex\codex_memory | Changes the runtime source directory and is resolved to an absolute path |
-
-常用命令：
-
-~~~powershell
-# 只复制运行文件和 Skill，不改 Codex 配置
-powershell -ExecutionPolicy Bypass -File .\scripts\install_windows.ps1
-
-# 自动配置 Codex
-powershell -ExecutionPolicy Bypass -File .\scripts\install_windows.ps1 -ConfigureCodex
-
-# 把运行文件放到自定义目录，同时配置 Codex
-powershell -ExecutionPolicy Bypass -File .\scripts\install_windows.ps1 -ConfigureCodex -InstallDirectory "D:\Tools\codex_memory"
-~~~
-
-常见行为：
-
-- Skill 始终安装到 %USERPROFILE%\.codex\skills\codex-memory；-InstallDirectory 只改变四个 Python 运行文件的位置。
-- 已有但没有本项目标记的 mcp_servers.codex_memory 段落会保留，安装器会提示你手动检查，避免覆盖未知配置。
-- 已有由本项目生成的 hooks 会被替换，其他应用的 hooks 会保留。
-- uninstall_windows.ps1 只删除安装的源文件和 Skill，不自动删除数据库或 Codex 配置，避免误删用户数据。
-
-The skill is always installed under %USERPROFILE%\.codex\skills\codex-memory; -InstallDirectory changes only the four runtime Python files. An unmarked existing MCP block is preserved. Project-managed hooks are replaced while unrelated hooks are retained. Uninstallation leaves the database and Codex configuration unchanged.
-
-## 不使用安装脚本：手动配置 / Manual configuration
-
-手动配置适合需要自定义路径、已有复杂 config.toml，或希望逐项审阅配置的使用者。先把四个 Python 文件放到同一个目录，例如：
-
-Manual configuration is useful when you need custom paths or want to review each configuration change. Put the four Python files in one directory, for example:
-
-~~~text
-D:\Tools\codex_memory\
-    codex_memory_core.py
-    codex_memory_mcp.py
-    codex_memory_hook.py
-    codex_memory_vault.pyw
-~~~
-
-如需手动安装 Skill，把 skills\codex-memory 整个目录复制到
-%USERPROFILE%\.codex\skills\codex-memory，然后重启 Codex Desktop。
-
-To install the skill manually, copy the complete skills\codex-memory directory
-to %USERPROFILE%\.codex\skills\codex-memory and restart Codex Desktop.
-
-然后把 config\config.toml.example 合并到 %USERPROFILE%\.codex\config.toml，把 <PYTHON> 和 <CODEX_MEMORY_DIR> 换成实际路径：
-
-~~~toml
-[mcp_servers.codex_memory]
-enabled = true
-command = 'C:\Path\to\python.exe'
-args = ['D:\Tools\codex_memory\codex_memory_mcp.py']
-startup_timeout_sec = 30
-tool_timeout_sec = 60
-~~~
-
-如果使用 Python Launcher：
-
-~~~toml
-[mcp_servers.codex_memory]
-enabled = true
-command = 'C:\Windows\py.exe'
-args = ['-3', 'D:\Tools\codex_memory\codex_memory_mcp.py']
-startup_timeout_sec = 30
-tool_timeout_sec = 60
-~~~
-
-command 必须是能导入同目录模块的 Python 解释器；args 中脚本路径必须指向同一份 codex_memory_mcp.py。MCP 是 stdio 服务，没有端口、API URL 或 API key；界面显示“不支持身份验证”对这个本地传输是正常的。
-
-The command must be a Python interpreter that can import the files in the same directory. The script path in args must point to the same copy of codex_memory_mcp.py. This is a local stdio MCP server: it has no port, API URL, or API key. “Authentication not supported” is expected for this transport.
-
-### Hooks 配置 / Hook configuration
-
-把 config\hooks.json.example 合并到 %USERPROFILE%\.codex\hooks.json。三个事件的用途如下：
-
-Merge config\hooks.json.example into %USERPROFILE%\.codex\hooks.json. The three events are:
-
-| 事件 Event | 默认行为 Default behavior | 是否写库 Writes |
-| --- | --- | --- |
-| SessionStart | 读取最多 5 条、重要度至少 67 的高重要度记忆 | 否 No |
-| UserPromptSubmit | 根据当前提示词读取最多 8 条相关记忆 | 否 No |
-| Stop | 要求 Codex 在结束前完成一次维护；实际写入由 MCP 工具完成 | Hook 本身否；维护按需写入 |
-
-关键字段：
-
-| 字段 Field | 默认值 Default | 修改作用 |
-| --- | --- | --- |
-| matcher | startup / resume / clear / compact | 限制 SessionStart 触发场景 |
-| additionalContextLimit | 示例为 5000 | 限制注入上下文的字符预算；过小可能截断记忆 |
-| Stop timeout | 30 秒 seconds | 允许 Stop hook 返回的最长时间 |
-| statusMessage | 见示例 | 只改变界面状态提示 |
-
-不要修改传给脚本的三个动作名：session-start、prompt 和 stop。如果手动添加多个同类 hook，请确认每个命令只运行一次，避免重复注入。
-
-Do not change the three action arguments passed to the script: session-start, prompt, and stop. If you add more hooks manually, make sure each command runs only once so the same memory is not injected repeatedly.
-
-## 日常使用 / Daily use
-
-### 在 Codex 中使用 / In Codex
-
-安装并重启后，不需要在每个聊天中输入特殊命令：
-
-1. 新会话或恢复会话时，SessionStart 提供高重要度背景；
-2. 每次提交用户消息时，UserPromptSubmit 按当前任务检索；
-3. 任务遇到无法解决的情况时，准备向用户求助前先按具体症状、错误、应用和环境再次检索；
-4. 每个助手回合结束时，Stop hook 要求 Codex 立即整理并写入本回合已确认的长期信息、成功验证的 pipeline、稳定决策和个人偏好；
-5. 会话结束时再做一次补充检查；只有 Codex 实际调用写入工具时，数据库才会新增、替换或淘汰记录。
-
-也可以在 Codex 中显式使用 Skill 名称 $codex-memory；自动 Hook 和显式 Skill
-使用同一个本地 MCP 服务和同一个数据库。
-
-After installation and restart, no special command is required in each chat:
-
-1. SessionStart provides high-importance background;
-2. UserPromptSubmit searches for task-relevant memories;
-3. Before asking the user for help when a task is blocked, Codex searches again using the concrete symptom or error, application, and environment;
-4. Stop requests immediate curation of confirmed durable facts from the current assistant turn;
-5. Session end performs a completeness review, and the database changes only when Codex calls a write tool.
-
-You can also invoke the skill explicitly with $codex-memory. Explicit use and
-automatic hooks share the same local MCP server and database.
-
-检索本身是只读的，不会升权、降权、创建记录，也不会启动或控制电脑上的其他应用。实际依赖某条已有记忆后，维护阶段应调用 codex_memory_mark_used，这样使用次数和重要度才会更新。
-
-Retrieval is read-only: it does not create records, change importance, or control other applications. After deliberately relying on an existing memory, the curation step should call codex_memory_mark_used so its use count and importance can be updated.
-
-### 在桌面管理器中使用 / In the desktop manager
-
-| 操作 Operation | 用法 How to use |
+| 参数 Parameter | 作用 Behavior |
 | --- | --- |
-| 搜索 Search | 输入关键词，回车或点击“搜索”；会查标题、内容、标签和来源 |
-| 分类筛选 Category | 选择“通用、项目、技术、决策、流程、偏好、人物、其他” |
-| 重要度筛选 Importance | 选择“重要、普通、不重要”或 1–100 的精确级别 |
-| 新建 New | 点击“新建”，填写标题和整合后的内容，再点“保存记忆” |
-| 编辑 Edit | 单击一条记录，修改字段后保存 |
-| 合并 Merge | 多选记录后点“合并选中”；会创建一条新记录，原记录保留 |
-| 删除 Delete | 多选后点“删除选中”；这是永久删除，不能撤销 |
-| 导出 Export | “文件 → 导出 JSON”，用于备份或迁移 |
-| 导入 Import | “文件 → 导入 JSON”；重复记录和超过容量的记录会跳过 |
-| 快捷键 Shortcuts | Ctrl+N 新建，Ctrl+S 保存，Ctrl+F 聚焦搜索框 |
-
-每条记忆建议只写一个信息点。内容可以较长，但应让记录脱离原对话也能理解：写清事实、适用场景、前提或触发条件、版本或范围和可执行约束；不要把整段聊天复制进去。标签和来源可以补充语境，但不能代替正文中的关键上下文。
-
-Keep one information point per memory. Content may be detailed, but it should stand on its own by stating the fact, applicable scenario, prerequisites or trigger, version or scope, and actionable constraints without copying a full conversation. Tags and source may supplement context but should not replace essential context in the content.
-
-建议模板 / Suggested template：事实 Fact；适用场景 Applicable scenario；前提或触发条件 Prerequisites or trigger；版本或范围 Version or scope；步骤与限制 Steps and constraints。
+| 无参数 / none | 只复制运行代码和 Skill / Copy runtime and skill only |
+| `-ConfigureCodex` | 配置 MCP，保留现有 Hook 配置 / Configure MCP, preserve hooks |
+| `-ConfigureHooks` | 显式创建/更新记忆 Hook / Explicitly configure memory hooks |
+| `-InstallDirectory "D:\Tools\codex_memory"` | 更换代码安装位置 / Change runtime destination |
+| `-PythonExecutable "C:\Path\python.exe"` | 指定解释器 / Select Python explicitly |
 
-## 记忆规则 / Memory rules
+解释器顺序为显式参数、`CODEX_MEMORY_PYTHON`、Codex 随附 Python、PATH 的 python、py -3。运行文件默认安装到 `%USERPROFILE%\.codex\codex_memory`；Skill 安装到 `%USERPROFILE%\.codex\skills\codex-memory`。升级会覆盖代码；已有数据库和设置继续保留。Interpreter selection follows explicit parameter, environment override, bundled Python, PATH Python, then py -3. Upgrades replace code while preserving data/settings.
 
-- 有效容量为 1000 条；标记为 obsolete 的记录不占用有效容量。
-- 记忆不局限于个人信息或偏好；任何已确认、对未来任务有一定帮助的一般事实、项目背景、技术信息、操作经验或通用知识都可以保存。
-- 新记录应带有足够上下文：至少说明它在什么场景、前提或触发条件、版本或范围下成立；只有场景显然的简单事实才可以省略重复说明。
-- 初始重要度由 Codex 判断：1–33 不重要，34–66 普通，67–100 重要。
-- 每次实际使用至少增加 20 点并乘以 1.5，最高 100。
-- 连续 6 小时没有检索时乘以 0.9，之后每 6 小时继续降低，最低 1 点。
-- 记忆之间的相关度为 1–100；相同对话中共同被实际使用的记忆会提高相关度。检索先用少量种子，再沿高相关度关系扩展。
-- 从旧版本升级时，旧的 1–5 重要度会自动映射为 1、26、51、76、100；已有记忆关系会从主题和标签自动建立。
-- 新事实覆盖旧事实时，先检索旧记录，再用 replace_ids 更新。
-- 错误、重复或过时记录用 codex_memory_retire 淘汰。
-- 用户明确要求保存时，电话号码、密码、令牌、私钥、敏感凭据等也可以保存；仍按原子信息整理，未经验证内容标注为待确认，不逐字复制完整聊天或文档。
+数据库默认位于 `%LOCALAPPDATA%\CodexMemoryVault\memory.db`。可用 `CODEX_MEMORY_DB` 指向单独数据库（见实际运行环境的路径设置）。不要把数据库放进 Git 仓库。The database is local. Keep all live data outside source control.
 
-The active capacity is 1000 records; obsolete records do not consume it. Memories are not limited to personal facts or preferences: any confirmed general fact, project background, technical detail, operating experience, or general knowledge that may help a future task can be stored. New records should carry enough context to stand alone by stating the applicable scenario, prerequisites or trigger, version or scope, and important conditions; only simple facts with an obvious context may omit repeated wording. Codex chooses initial importance from 1–100: 1–33 unimportant, 34–66 normal, and 67–100 important. Each deliberate use raises importance to at least current+20 and roughly current*1.5, capped at 100. Each 6-hour period without retrieval multiplies it by 0.9, down to 1. Memories also maintain learned relation strengths from 1–100; memories used together become more strongly related. Search starts with a small full-text seed set and expands through strong relation edges. Changed facts should replace old records with replace_ids; wrong, duplicate, or stale records should be retired. User-requested memories may include phone numbers, passwords, tokens, private keys, and other sensitive data. Keep them atomic and summarized, label unverified content as tentative, and do not copy complete conversations or documents verbatim.
+## 日常使用 / Everyday workflows
 
-When upgrading from the previous 1–5 version, existing importance values are mapped to 1, 26, 51, 76, and 100. Existing memories receive initial relation edges from shared topics and tags.
+| 要做什么 Task | 提示词示例 Example |
+| --- | --- |
+| 读取任务背景 / Retrieve context | “读取 project-demo 空间中与文件导出有关的记忆，场景是 document。” |
+| 保存新信息 / Save a fact | “保存这项已确认的配置，用 project-demo 空间；先查旧值，冲突时用新值替换并保留历史。” |
+| 接续任务 / Resume work | “读取 project-demo 的任务接续卡，说明下一步并继续。” |
+| 复用流程 / Reuse procedure | “找出这个环境下已验证的流程，检查前提和成功标准后使用。” |
+| 历史问题 / Ask about history | “查询上周生效的配置，并列出之后发生的变更。” |
+| 纠正 / Correct | “这条信息只适用于本项目，改为场景必读，不要全局应用。” |
+| 综合分析 / Synthesize | “根据相关记忆给出建议，注明引用的记录版本，区分事实与推断。” |
+| 恢复 / Recover | “先创建快照，再撤销记忆 42 的上次修改。” |
 
-## MCP 工具和参数 / MCP tools and parameters
+所有示例均为虚构 / All examples are synthetic.
 
-MCP server name: codex-memory.
-
-### codex_memory_search（只读 / read-only）
-
-| 参数 Parameter | 必须 Required | 默认 Default | 说明 |
-| --- | --- | --- | --- |
-| query | 是 Yes | — | 当前任务或关键词 |
-| limit | 否 No | 8 | 返回 1–20 条；越大注入上下文越多 |
-| category | 否 No | 空 empty | 精确分类筛选 |
-| min_importance | 否 No | 0 | 最低重要度 1–100 |
-
-示例：
-
-~~~json
-{
-  "query": "LaTeX 编译 PDF",
-  "limit": 8,
-  "category": "流程",
-  "min_importance": 67
-}
-~~~
-
-Searching does not change any record or usage count.
-
-### codex_memory_commit（新增或替换 / create or replace）
-
-| 参数 Parameter | 必须 Required | 默认 Default | 说明 |
-| --- | --- | --- | --- |
-| title | 是 Yes | — | 精确、短的标题 |
-| content | 是 Yes | — | 一个可复用的信息点；正文应包含必要的适用场景、前提或范围 |
-| category | 否 No | 通用 | 见上面的八个分类 |
-| importance | 否 No | 由模型判断 | 1–100；更新旧记录时省略可保留原值 |
-| tags | 否 No | 空 empty | 逗号分隔标签 |
-| source | 否 No | 空 empty | 来源或验证依据 |
-| memory_key | 否 No | 从标题生成 | 同一主题更新时保持不变 |
-| confidence | 否 No | 0.8 | 0–1 的置信度 |
-| replace_ids | 否 No | [] | 被新事实替换的旧记录编号 |
-| obsolete_ids | 否 No | [] | 同时淘汰的重复或失效记录 |
-| source_session | 否 No | 空 empty | 可选的会话标识 |
+## 能力与规则 / Capabilities and rules
 
-示例：
+### 分层检索 / Scoped retrieval
 
-~~~json
-{
-  "title": "GitHub 更新必须通过 Pull Request",
-  "content": "以后更新仓库时先从默认分支创建专用分支，在分支上提交并推送，最后创建 Pull Request。",
-  "category": "流程",
-  "importance": 85,
-  "tags": "GitHub,Pull Request",
-  "memory_key": "github-updates-use-pull-requests",
-  "confidence": 1.0
-}
-~~~
+`scope=global` 表示全局规则，`scope=scenario` 配合 `scenarios` 表示特定场景必读，`scope=on_demand` 表示按需召回。`space` 将全局、课程、求职或项目分开；搜索通常包含指定空间和全局空间。旧的 `always_apply` 接口保留兼容；将旧记录改成场景必读应先核对语义，不能仅凭分类猜测。
 
-### codex_memory_mark_used（记录实际使用 / deliberate use）
+Use global rules for universally applicable instructions, scenario rules for matched tasks, and on-demand records for ordinary facts. Project spaces avoid mixing unrelated work. Legacy always-apply controls remain available; content-aware reclassification is a curation step.
 
-必须传 memory_ids 数组。它只应包含本轮确实依赖的记录，不要把搜索结果全部标记为已使用。
+检索结合关键词、中文短语、调用方提供的 `aliases` 和类型化关系扩展。相关性优先，返回量受 `limit` 和 `token_budget` 约束；通过 `get` 读取完整正文。没有后台自动生成同义词或向量服务。Retrieval uses lexical/CJK matching, caller-supplied aliases and typed edges. Results fit a context budget; use `get` for full content. Query expansion and final relevance judgment belong to Codex.
 
-Pass a memory_ids array containing only the records that the turn actually relied on. Do not mark every search result as used.
+### 四个独立维度 / Four independent dimensions
 
-### codex_memory_related（只读 / read-only）
+| 字段 Field | 含义 Meaning | 默认规则 Default |
+| --- | --- | --- |
+| `importance` | 长期价值 / Durable value | Codex 判断 1–100，不因闲置直接衰减 / Caller-judged, stable |
+| `activity` | 最近使用程度 / Recent activity | 每次实际使用取 `max(当前+20, 当前×1.5)`，最高100；每6小时闲置×0.9，最低1 |
+| `confidence` | 证据可信度 / Evidence confidence | 0–1；根据确认和验证判断 / Based on evidence |
+| `valid_from`, `valid_until` | 事实生效区间 / Validity interval | 使用 ISO 8601 时间 / ISO 8601 timestamps |
 
-传入一个 memory_id，返回与它相关的记忆以及 relation_strength（1–100）。
-检索会先找到少量文本匹配的种子记忆，再沿高相关度边扩展；共同调用
-codex_memory_mark_used 的记忆会提高它们之间的相关度。
+搜索完全只读，不会更新使用次数或存储分数。`mark_used` 只记录实际依赖的记忆；不能把所有搜索结果都标为使用。活跃度低不等于信息错误。Search is read-only. Mark only actual reliance. Low activity alone is not a reason to discard durable knowledge.
 
-Pass a memory_id to return related memories and their relation_strength (1–100).
-Search starts with a small lexical seed set and follows strong relation edges.
-Memories passed together to codex_memory_mark_used become more strongly related.
+### 版本、关系和恢复 / Revisions, relations and recovery
 
-### codex_memory_retire（淘汰 / retire）
+更新保留不可变历史、来源和替换原因。`expected_revision` 防止多个聊天相互覆盖；`request_id` 防止重试造成重复写入或使用计数。遇到版本冲突先重新读取并合并。Historical revisions are retained; optimistic revisions and idempotency keys prevent conflicting writes and duplicate retries.
 
-必须传 memory_ids 数组；可选 reason 和 source_session。淘汰后不再参与检索，也不占有效容量。
+关系类型：`related`、`co_used`、`same_project`、`prerequisite`、`supersedes`、`supports`、`contradicts`，强度 1–100。共同使用与语义关系分别处理；过时正文的旧关系需要重新审查。Typed edges distinguish shared use from prerequisites, replacement and evidence.
 
-Pass memory_ids; reason and source_session are optional. Retired records are excluded from retrieval and active capacity.
+批量维护前可创建 SQLite 一致性快照。单条撤销生成新版本；整库恢复先创建安全快照。快照包含真实数据，始终留在本机。Snapshots are consistent database backups; revision restore appends history, and whole-store restore makes a safety snapshot first.
 
-### codex_memory_stats（统计 / statistics）
+### 项目与经验 / Projects and reusable experience
 
-不需要参数，返回有效数、淘汰数、重要/普通/不重要分布、容量和剩余容量。
+- **项目空间 / Spaces**：全局背景与项目知识并存，可显式查询。
+- **任务记忆包 / Packets**：组合相关事实、适用规则、任务状态和流程，遵守上下文预算。
+- **个人资料视图 / Profiles**：从来源记录派生字段；缺失信息保持缺失，不另造一份权威资料。
+- **任务接续卡 / Task cards**：目标、完成项、下一步、文件和待确认问题；默认保留7天，完成后关闭。
+- **流程与失败库 / Procedures and failures**：保留环境、前提、步骤、成功判据、验证时间和证据；失败条目记录可复现条件与恢复方法。
+- **反馈 / Feedback**：记录 useful / irrelevant / incorrect，区分一次性要求和长期偏好。
+- **文件联动 / File fingerprints**：显式关联本地文件路径和指纹，显式检查变化并标记需要复核；不会静默读取所有文件或监听其它应用。
+- **带依据分析 / Cited reflection**：先准备证据，由当前 Codex 综合，再保存引用 ID/版本的派生结论；来源变化后标记过时。
+- **Skill 草稿 / Skill drafts**：从带验证证据的流程生成可审阅草稿；草稿不会自行安装或执行。
+- **健康与关系图 / Health and graph**：检查缺少来源、重复候选、过期任务/流程和失效引用，并查看类型化关系。
 
-No arguments are required. It returns active, obsolete, importance distribution, capacity, and remaining capacity.
+**容量 / Capacity:** 1000 条是有效长期原子记忆的默认上限。历史版本、任务卡、派生视图、快照不重复占用这1000个名额，但仍占用磁盘；需要定期检查健康面板并清理过期任务/不需要的快照。The active-record limit excludes revisions, task cards, derived views and snapshots; monitor disk usage separately.
 
-## 参数如何修改 / How to customize parameters
+## MCP 接口 / MCP tools
 
-下面列出的是真正被运行时代码读取的位置。只修改 pyproject.toml 中的说明值不会改变已经安装的运行行为；修改源码后要重新运行安装脚本，把新文件复制到安装目录。
+所有工具名称带 `codex_memory_` 前缀。以下为主要参数，完整类型由 `tools/list` 提供。All names use the prefix; discover authoritative schemas through MCP `tools/list`.
 
-The locations below are the values read by the runtime. Changing only the metadata in pyproject.toml does not change an installed runtime. After editing source files, rerun the installer to copy them to the active install directory.
+| 工具 Tool | 主要参数 Main arguments | 读写 Access |
+| --- | --- | --- |
+| `search` | query, space, scenarios, aliases, limit, token_budget, category, min_importance, as_of, include_global | 只读 Read |
+| `get`, `history` | memory_id | 只读 Read |
+| `commit` | title, content, importance, confidence, memory_key, replace_ids, expected_revision, request_id, space, kind, scope, scenarios, evidence, valid_from/until | 写 Write |
+| `retire`, `mark_used` | memory_ids, source_session, request_id；mark_used可加co_use_groups | 写 Write |
+| `related` / `relation` | memory_id / a, b, relation_type, strength, evidence | 读 / 写 Read / write |
+| `set_always_apply` | memory_ids, enabled | 兼容写 Legacy write |
+| `stats` | 无 / none | 只读 Read |
+| `restore_revision` | memory_id, revision, expected_revision | 写 Write |
+| `snapshot`, `restore_snapshot` | label / snapshot_id | 写 Write |
+| `spaces` | action=list/get/create, key, title, description | 按action / By action |
+| `task` | action=list/get/save/close, key, space, goal, completed, next_steps, files, questions, ttl_hours | 按action |
+| `procedure` | action=list/get/save/feedback/skill_draft, memory_id, procedure_type, steps, prerequisites, success_criteria, environment, evidence | 按action |
+| `profile`, `packet` | fields/space；query/space/scenarios/token_budget | 只读 Read |
+| `reflect` | action=prepare/save/get/list, topic, conclusion, citations, inference | 按action |
+| `file` | action=attach/check/list, path, memory_ids | list只读；attach/check写 |
+| `feedback` | memory_id, outcome, context, correction, scope | 写 Write |
+| `health`, `graph`, `maintenance` | space / memory_id / limit按schema | 只读分析 Read |
 
-| 想修改的内容 Change | 文件和字段 File and field | 默认 Default | 注意 |
-| --- | --- | --- | --- |
-| 有效记忆容量 Active capacity | codex_memory_core.py 和 codex_memory_vault.pyw 的 MAX_MEMORIES | 1000 | 两处一起改；MCP 和管理器必须一致 |
-| 遗忘周期 Decay interval | core 的 DECAY_INTERVAL_HOURS | 6 | 单位是小时；每个周期按 0.9 倍衰减 |
-| 分类 Categories | core、vault 的 CATEGORIES；MCP 的 TOOLS 分类枚举 | 八类 | 三处一起改 |
-| 会话启动检索 SessionStart | codex_memory_hook.py 的 limit=5、min_importance=67 | 5 条、重要度至少 67 | 增大可能占用更多上下文 |
-| 用户消息检索 Prompt | codex_memory_hook.py 的 limit=8 | 8 条 | 增大可能影响回答上下文长度 |
-| 注入上下文预算 Context budget | hooks.json 的 additionalContextLimit | 示例 5000 | 太小会截断，太大可能挤占任务上下文 |
-| MCP 启动超时 Startup timeout | config.toml 的 startup_timeout_sec | 30 秒 | 只在启动很慢时增大 |
-| MCP 工具超时 Tool timeout | config.toml 的 tool_timeout_sec | 60 秒 | 只在工具操作很慢时增大 |
-| Stop hook 超时 Stop timeout | hooks.json 中 Stop hook 的 timeout | 30 秒 | 超时会导致维护提醒失败 |
-| 源文件安装目录 Source path | 安装脚本 -InstallDirectory | %USERPROFILE%\.codex\codex_memory | 不需要改源码 |
-| 数据库路径 Database path | core 的 database_path() 和 vault 的 data_directory() | %LOCALAPPDATA%\CodexMemoryVault | 当前版本没有独立 DB_PATH 参数；两处必须保持一致 |
-| 重要度范围 Importance scale | core、vault 的 IMPORTANCE_MIN/MAX 和 IMPORTANT_MIN/NORMAL_MIN | 1–100；67 起为重要 | 改动时同步 MCP 参数说明 |
-| 关系范围 Relation scale | core 的 RELATION_MIN/MAX | 1–100 | 关系边由新记忆主题匹配和共同使用自动维护 |
-| 关系扩展预算 Relation budget | core 的 RELATION_SEED_LIMIT、RELATION_EXPANSION_LIMIT | 12 个种子、32 个邻居 | 增大可覆盖更多关系，亦会增加上下文开销 |
+`reflect.save` 的引用形如 `[{"id":42,"revision":3}]`。推断应显式标注，不能自动变成确认事实。`expected_version` 用于任务卡等扩展对象；长期记忆用 `expected_revision`。Citations pin source revisions; derived inference is not a confirmed fact. Feature objects use expected_version; core records use expected_revision.
 
-修改容量或遗忘周期的示例：
+写入示例 / Example write:
 
-~~~text
-1. 在 codex_memory_core.py 中改 MAX_MEMORIES 或 DECAY_INTERVAL_HOURS。
-2. 如需修改桌面显示说明，同时更新 codex_memory_vault.pyw。
-3. 如需新分类，同时更新 MCP 的分类枚举。
-4. 重新运行 install_windows.ps1。
-5. 完全重启 Codex，并重新打开桌面管理器。
-~~~
+```json
+{"title":"Demo project export command","content":"For the demo project's current toolchain, export with the documented build command and verify that the PDF opens.","space":"project-demo","kind":"procedure","scope":"scenario","scenarios":["document"],"importance":72,"confidence":0.9,"memory_key":"export-procedure","evidence":[{"type":"verified","note":"Synthetic example only"}],"request_id":"demo-export-create-1"}
+```
 
-Example workflow:
+## 参数调整 / Configuration
 
-~~~text
-1. Edit MAX_MEMORIES or DECAY_INTERVAL_HOURS in codex_memory_core.py.
-2. Update the desktop explanation in codex_memory_vault.pyw if needed.
-3. Update the MCP category enum if you add a category.
-4. Rerun install_windows.ps1.
-5. Fully restart Codex and reopen the manager.
-~~~
+复制 `config/memory-settings.json.example` 为数据库目录下的 `settings.json`，或用环境变量 `CODEX_MEMORY_SETTINGS` 指定配置文件。修改后重启 MCP，使各进程使用一致设置。Copy the template to `settings.json` next to the database, or select it with `CODEX_MEMORY_SETTINGS`, then restart MCP. Unknown keys and invalid values are rejected on writable initialization.
 
-如果经常需要切换数据库位置，建议先使用管理器导出 JSON，再修改两处路径，重新启动后导入 JSON；不要在 Codex 或管理器仍运行时移动正在使用的 SQLite 文件。
+| 设置 Setting | 默认 Default | 作用 Effect |
+| --- | --- | --- |
+| max_memories | 1000 | 有效长期记录上限 / Active memory cap |
+| decay_interval_hours | 6 | 活跃度衰减间隔 / Activity decay interval |
+| activity_decay_factor | 0.9 | 每个间隔的活跃度倍率 / Decay multiplier |
+| activity_boost_factor | 1.5 | 实际使用时的增长倍率 / Use multiplier |
+| activity_boost_min | 20 | 每次使用最低增长 / Minimum use boost |
+| context_token_budget | 4000 | 默认上下文预算；近似估计 / Approximate default budget |
+| relation_seed_limit | 12 | 初始召回候选数 / Initial seed count |
+| relation_expansion_limit | 32 | 图扩展候选数 / Graph expansion count |
+| relation_min_strength | 30 | 扩展所需最低关系强度 / Edge threshold |
+| relation_half_life_days | 30 | 共同使用关系半衰期 / Co-use edge half-life |
+| default_task_ttl_hours | 168 | 任务接续卡默认有效期 / Default task TTL |
 
-For frequent database moves, export JSON first, change both path functions, then restart and import the JSON. Do not move an SQLite file while Codex or the manager is using it.
+示例：只想减少上下文量，把 `context_token_budget` 改成 2000；想延长近期活跃度的保留，把 `decay_interval_hours` 改成 12。重要度本身不随这些参数衰减。To reduce context, set the budget to 2000; to slow activity decay, set the interval to 12. Neither changes durable importance.
 
-## 备份、迁移和卸载 / Backup, migration, and uninstall
+## 本地管理与维护 / Local management
 
-### 推荐的备份方式 / Recommended backup
+新管理面板可双击 `%USERPROFILE%\.codex\codex_memory\启动 Codex 记忆面板.bat`，或在源代码目录运行 `pythonw .\codex_memory_dashboard.py`。旧入口 `pythonw .\codex_memory_vault.pyw` 会转到同一面板。它提供记忆检索与编辑、场景/空间、任务接续、流程库、资料视图、证据摘要、文件指纹、健康报告、关系图、版本和快照恢复。浏览数据库以只读方式打开；保存、导入和恢复才写入本地库。新面板只在本机运行。Launch the dashboard from the installed batch file or run `pythonw .\codex_memory_dashboard.py` in the source tree. The legacy entry point opens the same workbench. Browsing stays read-only; explicit save/import/restore operations write to the local store.
 
-1. 打开管理器；
-2. 选择“文件 → 导出 JSON”；
-3. 把导出的文件放在安全位置；
-4. 迁移到另一台机器后，先安装本项目，再选择“文件 → 导入 JSON”。
+升级前创建快照；第一次可写连接迁移旧结构并保留内容和旧关系。旧的“每次必读”记录按标题/标签中的场景线索迁为候选范围，并标记 `needs_review`；Codex 在依赖它们作为指令前应核对正文与适用场景。只读连接不执行迁移，未初始化或版本过旧时应先完成本地升级再读取。Migrations occur on writable initialization, never during reads. Legacy scope suggestions remain visible in the health panel until reviewed.
 
-导出的 JSON 包含有效记忆和它们之间的相关度边。导入支持三种格式：
+## 验证、打包与发布 / Validation and packaging
 
-- 直接的记忆数组；
-- 只包含 memories 数组的 codex-memory-v1 对象；
-- 包含 memories 和 relations 数组的 codex-memory-v2 对象。
+```powershell
+python -m unittest discover -s tests -v
+python .\scripts\sync_runtime.py
+python .\scripts\sync_runtime.py --check
+powershell -ExecutionPolicy Bypass -File .\scripts\check_repository_data_free.ps1
+git diff --check
+```
 
-Import skips duplicate title/content pairs and records beyond the 1000-record active limit. Relation edges are restored when both endpoint memories are imported. Never commit a personal export JSON or memory.db to GitHub.
+评测仅使用虚构资料、临时数据库和固定时间；覆盖原子化/同义表达、跨项目检索、版本更新、历史问题、缺失证据、流程失效、幂等和恢复。语义提取由调用方负责，应使用同一组虚构对话比较不同调用模型的质量。Tests use synthetic fixtures and temporary databases. Backend tests cover storage/retrieval invariants; extraction quality must be evaluated with the chosen caller model.
 
-### 卸载 / Uninstall
+根目录运行模块为唯一代码源；`sync_runtime.py` 只复制明确列出的无数据运行文件、Skill和设置模板到插件包，`--check` 检测漂移。不要手工长期维护多套运行代码。Canonical modules live at the repository root; the sync script packages only an explicit allowlist.
 
-~~~powershell
-# 使用默认安装目录
-powershell -ExecutionPolicy Bypass -File .\scripts\uninstall_windows.ps1
+已安装本地插件或独立 Skill 更新后，可分别指定目标来同步：
 
-# 使用自定义安装目录
-powershell -ExecutionPolicy Bypass -File .\scripts\uninstall_windows.ps1 -InstallDirectory "D:\Tools\codex_memory"
-~~~
+```powershell
+python .\scripts\sync_runtime.py --installed-plugin "$env:USERPROFILE\.codex\plugins\cache\<marketplace>\codex-memory\<version>" --installed-skill-dir "$env:USERPROFILE\.codex\skills\codex-memory" --hook-runtime "$env:USERPROFILE\.codex\codex_memory"
+python .\scripts\sync_runtime.py --check --installed-plugin "$env:USERPROFILE\.codex\plugins\cache\<marketplace>\codex-memory\<version>" --installed-skill-dir "$env:USERPROFILE\.codex\skills\codex-memory" --hook-runtime "$env:USERPROFILE\.codex\codex_memory"
+```
 
-卸载脚本会删除运行文件和 Skill，但会保留数据库和 Codex 配置。卸载后如果不再需要 hooks/MCP，请手动从 %USERPROFILE%\.codex\hooks.json 和 %USERPROFILE%\.codex\config.toml 删除本项目段落，并先保存备份。
+同步命令只更新运行代码和 Skill；不会修改 Hook 配置、重启 Codex 或触碰记忆正文。安装后的 MCP/Skill 由 Codex 在下次启动时重新载入。
 
-The uninstall script removes runtime files and the skill but preserves the database and Codex configuration. If you no longer want integration, remove the project entries from hooks.json and config.toml manually after making a backup.
+GitHub 仅存放代码、配置模板、说明和虚构测试。记忆正文、来源、关系、数据库、快照、备份、日志、任务卡、个人资料和导出均禁止提交。所有更新从专用分支通过 Pull Request 合并。Publish only data-free code and synthetic examples, through dedicated branches and Pull Requests.
 
-## 故障排查 / Troubleshooting
+## 故障处理与边界 / Troubleshooting and limits
 
-### python 找不到 / Python is not found
+- **连接不存在 / Missing database:** 首次创建记录或启动管理器完成初始化；读取不会悄悄创建库。Initialize with a write or the manager.
+- **版本冲突 / Version conflict:** 重新读取最新记录并判断如何合并，使用新的操作键提交；不能只改版本号盲目重试。Reread and reconcile.
+- **重复请求 / Retry:** 同一操作重用 request_id；更改参数时使用新键。Reuse the key only for the same logical request.
+- **检索不足 / Weak recall:** 指定 space/scenarios，提供少量 aliases，检查有效期和 scope；用 get 查看全文。Inspect scope, validity and aliases.
+- **流程或摘要过时 / Stale procedure/view:** 检查引用版本、文件指纹和验证日期，再重新验证并保存。Revalidate evidence before reuse.
+- **Hook 报错 / Hook failure:** 本版本功能验收不等于桌面端 Hook 成功。可直接调用 Skill/MCP；Hook 需要在真实桌面会话中单独确认，不能以“信任状态”替代执行结果。Explicit MCP use remains available; verify hooks separately.
+- **容量达到上限 / Capacity:** 先审查重复和失效记录，再合并或淘汰；不要仅凭活跃度清理稳定事实。Curate before adding at capacity.
 
-~~~powershell
-python --version
-py -3 --version
-Get-Command python.exe -ErrorAction SilentlyContinue
-Get-Command py.exe -ErrorAction SilentlyContinue
-~~~
-
-安装 Python 3.10+ 并确保 python.exe 或 py.exe 在 PATH 中，然后重新运行安装脚本。脚本不会自动下载 Python。
-
-Install Python 3.10+ and make sure python.exe or py.exe is on PATH. The installer does not download Python.
-
-### /hooks 没有命令或 Hook 退出码为 1 / Missing hooks or exit code 1
-
-1. 确认安装目录中存在 codex_memory_hook.py；
-2. 用 -ConfigureCodex 重新运行安装器；
-3. 完全退出并重开 Codex；
-4. 在 PowerShell 中直接测试 Hook 是否能启动：
-
-~~~powershell
-$python = (Get-Command python.exe).Source
-$hook = Join-Path $env:USERPROFILE ".codex\codex_memory\codex_memory_hook.py"
-'{"prompt":"test"}' | & $python $hook prompt
-~~~
-
-正常情况下会输出一行 JSON。若自定义了安装目录，把 $hook 改成实际路径；若只有 Python Launcher，把 $python 换成 py 并在命令中加入 -3。
-
-The command should print one JSON line. With a custom install directory, update $hook; with only the Python Launcher, use py -3.
-
-### MCP 显示未连接 / MCP is not connected
-
-- 检查 %USERPROFILE%\.codex\config.toml 中的 [mcp_servers.codex_memory]；
-- 确认 command 是实际可用的 Python 解释器；
-- 确认 args 中的脚本路径存在；
-- 确认解释器能从该目录导入 codex_memory_core.py；
-- 删除重复或错误的旧配置后重新运行安装器；
-- 完全重启 Codex。
-
-Use the same Python interpreter for MCP and hooks. The local server is stdio, so it does not provide a web endpoint or authentication flow.
-
-### 能读取但没有新增记忆 / Retrieval works but nothing is saved
-
-这是设计行为：读取 Hook 是只读的，Stop hook 只要求 Codex 进行一次维护；只有 Codex 判断本轮存在已确认且对未来任务有一定帮助的信息并实际调用 codex_memory_commit，才会新增或更新记录。没有可复用信息时不写入是正常的。
-
-This is intentional. Retrieval hooks are read-only, and Stop requests immediate curation of the current assistant turn. A record is created or updated only when Codex decides that the turn contains confirmed information that may help a future task and calls codex_memory_commit; the session-end pass checks for anything missed.
-
-### 记忆数量或重要度看起来不对 / Counts or importance look wrong
-
-打开管理器查看顶部统计，或调用 codex_memory_stats。注意：
-
-- obsolete 不计入有效容量；
-- 搜索不会增加使用次数；
-- 只有实际依赖后调用 codex_memory_mark_used 才会升权；
-- 遗忘按 6 小时周期在下一次写入维护或管理器刷新时应用。
-
-Obsolete records do not consume active capacity. Search does not count as use when it is read-only; deliberate mark_used calls do. Each deliberate use applies the minimum +20 and 1.5x increase. Decay is applied during the next write maintenance or manager refresh, using one 0.9x step per 6 hours without retrieval.
-
-### 数据库被占用 / Database is locked
-
-先关闭 Codex Desktop 和记忆管理器，再进行移动、备份或恢复。SQLite 可能同时存在 memory.db-wal 和 memory.db-shm 文件；不要只复制其中一个正在使用的文件，优先使用 JSON 导出。
-
-Close Codex Desktop and the manager before moving or restoring the database. SQLite may have memory.db-wal and memory.db-shm sidecar files; JSON export is safer than copying a live database.
-
-## 项目结构 / Project layout
-
-~~~text
-codex_memory_core.py       # SQLite schema, search, ranking, decay, commit/retire
-codex_memory_mcp.py        # stdio JSON-RPC MCP server
-codex_memory_hook.py       # SessionStart/UserPromptSubmit/Stop hooks
-codex_memory_vault.pyw     # Tkinter desktop manager
-启动 Codex 记忆库.bat       # Windows launcher
-config/                    # Manual MCP and hook examples
-scripts/                   # Windows install and uninstall scripts
-docs/                      # Architecture and lifecycle notes
-skills/codex-memory/       # Installable Codex skill
-.agents/plugins/           # Local Marketplace catalog
-plugins/codex-memory/      # Installable data-free Codex plugin package
-AGENTS.md                  # Repository memory curation policy
-~~~
-
-## 隐私、Git 和 Pull Request / Privacy, Git, and Pull Requests
-
-记忆库默认只读写本机 SQLite，不包含遥测或自动上传逻辑。任何记忆信息都不得上传到 GitHub，包括记忆文本、关系边、数据库、导出 JSON、备份、日志、Hook 载荷和本机记忆上下文。gitignore 会排除常见数据库、备份、日志、缓存和记忆导出文件；提交前必须检查暂存区和 diff，只能提交不含记忆数据的模型代码、配置模板和说明。可以运行 powershell -ExecutionPolicy Bypass -File .\scripts\check_repository_data_free.ps1 -Staged 做文件级检查。
-
-The store reads and writes a local SQLite file and has no telemetry or automatic upload. Never upload any memory information to GitHub, including memory text, relation edges, databases, JSON exports, backups, logs, hook payloads, or local memory context. gitignore excludes common database, backup, log, cache, and memory-export files. Before pushing, inspect staged files and the diff; run powershell -ExecutionPolicy Bypass -File .\scripts\check_repository_data_free.ps1 -Staged; only data-free model code, configuration templates, and documentation may be committed.
-
-以后修改本项目时必须遵循：
-
-1. 从默认分支创建专用分支；
-2. 在专用分支提交并推送；
-3. 创建 Pull Request，写清变更摘要和验证结果；
-4. 通过 Pull Request 合并，不直接推送默认分支。
-
-Future project changes must:
-
-1. start from a dedicated branch;
-2. be committed and pushed on that branch;
-3. be submitted as a Pull Request with a summary and verification notes;
-4. be merged through the Pull Request rather than pushed directly to the default branch.
-
-## 许可证 / License
-
-MIT License. See LICENSE.
+更详细的实现说明见 [架构 / Architecture](docs/architecture.md)。

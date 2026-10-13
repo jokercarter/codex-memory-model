@@ -1,6 +1,6 @@
 [project]
 name = "codex-memory-model"
-version = "1.0.0"
+version = "2.0.0"
 description = "A dependency-free local long-term memory layer for Codex"
 requires-python = ">=3.10"
 dependencies = []
@@ -8,6 +8,13 @@ dependencies = []
 [tool.codex-memory]
 max_memories = 1000
 decay_interval_hours = 6
+activity_decay_factor = 0.9
+activity_boost_factor = 1.5
+activity_boost_min = 20
+context_token_budget = 4000
+relation_min_strength = 30
+relation_half_life_days = 30
+default_task_ttl_hours = 168
 importance_min = 1
 importance_max = 100
 important_min = 67
